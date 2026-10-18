@@ -214,7 +214,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.2.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.2.1 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 6;
@@ -389,17 +389,20 @@ function connectRelay(){
   c.on("offline",function(){ if(S.connected) L("relay","offline"); S.connected=false; });
   c.on("reconnect",function(){ L("relay","trying to reconnect"); });
   c.on("error",function(e){ L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
-  c.on("message",function(t,payload){ onRelayMessage(t.split("/").pop(), payload.toString()); });
+  c.on("message",function(t,payload,packet){ onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
 }
-function onRelayMessage(role, txt){
+function onRelayMessage(role, txt, stored){
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
   if(!txt){ if(role!=="cfg" && role!==S.role){ delete S.peers[role]; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
   return unseal(txt).then(function(d){
     if(!d){ if(Date.now()-S.lastUnreadable>60000){ S.lastUnreadable=Date.now(); L("relay","unreadable message ignored ("+role+")"); } return; }
-    handleMsg(role,d);
+    handleMsg(role,d,!!stored);
   });
 }
-function handleMsg(role, d){
+// A live message is timed by when it arrives here, so a phone with a wrong clock is not shown as lost.
+// A stored (retained) message replayed on connect keeps the sender's time, so an old position is not shown as fresh.
+function handleMsg(role, d, stored){
+  var now=Date.now(), at = stored ? Math.min(d.t,now) : now;
   if(role==="cfg"){
     if(S.role==="truck") return;                  // Truck 1 owns the settings
     if(!validCfg(d) || typeof d.t!=="number"){ L("cfg","bad gap settings ignored"); return; }
@@ -411,11 +414,11 @@ function handleMsg(role, d){
   if(typeof d.lat!=="number"||typeof d.lon!=="number"||typeof d.t!=="number") return;
   if(Math.abs(d.lat)>90||Math.abs(d.lon)>180) return;
   if(role===S.role){
-    if(d.id!==myId && Date.now()-d.t<STALE_MS) S.dupRoleSeen=Date.now();
+    if(d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
     return;
   }
   S.peers[role]={lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
-    acc:typeof d.acc==="number"?d.acc:null,t:Math.min(d.t,Date.now())};
+    acc:typeof d.acc==="number"?d.acc:null,t:at};
 }
 function publishMine(force){
   var f=S.lastFix; if(!f||!S.client||!S.connected) return;

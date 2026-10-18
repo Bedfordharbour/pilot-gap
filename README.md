@@ -1,6 +1,6 @@
 # Pilot Gap
 
-Live distance between the lead pilot, the oversize vehicle (truck) and the rear pilot, shown on each driver's phone. Built for Bedford Harbour Engineering oversize moves.
+Live distance between the lead pilot, the truck or trucks, and the rear pilot, shown on each driver's phone. Built for Bedford Harbour Engineering oversize moves.
 
 Live page: https://bedfordharbour.github.io/pilot-gap/
 
@@ -37,10 +37,14 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 | `TESTING.md` | Test checklist and known issues |
 | `tests/smoke.mjs` | Automated phone-size test, run before every push |
 
+## Versions and backups
+
+The live page is always the newest version on `main`. Every released version is also kept unchanged on its own branch, `release/vX.Y.Z` (for example `release/v1.2.0`), so any old version can be looked at or put back.
+
 ## Making a change
 
 1. Edit `index.html` and bump `VERSION` near the top of the script.
 2. Run `node tests/smoke.mjs`; it must print "All checks passed". Look at `tests/phone.png`.
 3. Add a line to `CHANGELOG.md`, and to `DEVLOG.md` if a decision or fault is involved.
-4. Commit and push to `main`. GitHub Pages updates the live page within a few minutes (decision 2026-10-18: push straight to live; see DEVLOG).
+4. Commit and push to `main`, then push a `release/vX.Y.Z` branch for the new version. GitHub Pages updates the live page within a few minutes (decision 2026-10-18: push straight to live; see DEVLOG).
 5. Open the live page with `?v=<anything>` on the end to skip the phone's saved copy, and check the version number at the bottom.

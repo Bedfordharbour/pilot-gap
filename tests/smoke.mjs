@@ -4,7 +4,7 @@
 // or set PLAYWRIGHT_PATH to an existing Playwright install.
 // It serves the repo folder locally, opens the page at phone size, runs practice mode,
 // checks one-truck and two-truck layouts, gap settings, Settings and Mute,
-// and saves tests/phone.png and tests/phone-two-trucks.png to look at.
+// scrambling, the trip log and message timing, and saves screenshots in tests/ to look at.
 // It exits with code 1 if any check fails.
 import { createRequire } from 'module';
 import http from 'http'; import fs from 'fs'; import path from 'path'; import { fileURLToPath } from 'url';
@@ -107,6 +107,14 @@ await p.evaluate(() => window.__pg.onRelayMessage('cfg', JSON.stringify({id:'z',
 const badSealed = await p.evaluate(() => window.__pg.seal({id:'x', trucks:1, t:Date.now(), ranges:{front:{min:900,max:100}, mid:{min:0,max:100}, rear:{min:100,max:1000}}}));
 await p.evaluate(t => window.__pg.onRelayMessage('cfg', t), badSealed);
 await p.waitForTimeout(1200);
+// clock check: a live position stamped 60 s in the past (sender clock slow) still counts as fresh; a stored one does not
+const old = await p.evaluate(() => window.__pg.seal({id:'q', lat:-33.86, lon:121.89, spd:22, hdg:0, acc:5, t:Date.now()-60000}));
+await p.evaluate(t => window.__pg.onRelayMessage('lead', t, false), old);
+await p.waitForTimeout(300);
+check('live message from a phone with a slow clock is fresh', await p.evaluate(() => Date.now() - window.__pg.S.peers.lead.t < 5000));
+await p.evaluate(t => window.__pg.onRelayMessage('lead', t, true), old);
+await p.waitForTimeout(300);
+check('stored message keeps its own (old) time', await p.evaluate(() => Date.now() - window.__pg.S.peers.lead.t > 50000));
 check('wrong-code, plain and bad messages ignored', (await p.textContent('#gap_rear_range')) === '150–900 m', await p.textContent('#gap_rear_range'));
 
 // Trip log (8a)

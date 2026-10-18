@@ -2,6 +2,12 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.2.1 — 18 Oct 2026
+
+- Fix: a phone whose clock is wrong no longer shows as "lost" on the others. Live messages are now timed by when they arrive (found in audit).
+- Notes tidied (stale 1234 and v1 channel lines).
+- Backups: each version is kept on its own branch, `release/v1.0.0`, `release/v1.1.0`, `release/v1.2.0`, `release/v1.2.1`.
+
 ## 1.2.0 — 18 Oct 2026
 
 - **Trip log on each phone.** Records relay connects and drops, GPS errors and dropouts, each gap going in or out of range (with distance), lost and regained contact, alarms, mute, gap settings, the phone switching away (another app, call, screen locked), keep-awake, script errors, and a sample of all gaps every 30 s. Kept on the phone (up to 6,000 entries; a new trip within 6 h continues the same log).
@@ -27,7 +33,7 @@ First version for the field trial on 19 Oct 2026. Built up through these commits
 
 | Commit | Change |
 |---|---|
-| (this) | Version number shown on the page; README, CHANGELOG, DEVLOG, TESTING and an automated smoke test added |
+| `0ca8987` | Version number shown on the page; README, CHANGELOG, DEVLOG, TESTING and an automated smoke test added |
 | `4720625` | Relay library stored in the repo instead of loaded from unpkg.com |
 | `fe6b45f` | Fix: Settings panel was always visible, so the Settings button seemed to do nothing |
 | `c329ae7` | Mute is now on/off and lasts 5 min (was 1 min); bigger Truck label with a truck symbol |
