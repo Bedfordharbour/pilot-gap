@@ -4,6 +4,41 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### First four-phone road test (04:47–05:31)
+
+Logs in Google Drive > Pilot Gap logs:
+- pilotgap-20261019-0447-truck-Ryan-fopb4c (app 1.0.2)
+- pilotgap-20261019-0454-lead-Lawrie-wwigux (Samsung Internet)
+- pilotgap-20261019-0452-rear-HamishWakefield-foezxb (iPhone Safari)
+- pilotgap-20261019-0529-truck2-Dave-unw5l7 (Chrome)
+
+All phones ran 1.5.2.
+
+Worked:
+- scrambled relay, settings from Truck 1 reaching the lead and rear, the old-message filter
+- the app running behind other apps (samples, alarms and receiving in the background)
+- uploads with retry
+
+Fresh gaps agreed between phones: 1,239 m against 1,313 m at speed, a 1–2 s timing difference.
+
+**Biggest practical finding:** the lead and rear pilots were on browsers. Every time they switched away or locked the phone, they vanished for the others: the lead 8 times, and the rear's iPhone for 9 min. Only the app keeps sending in the background. iPhones have no app.
+
+Faults fixed in 1.5.3:
+- silent dead relay in the app's background
+- old fix sent as new
+- late backlog counted as live
+- false "Lost contact" at start
+- stale vehicles never removed
+- timer uploads not logged
+
+**For Ryan (alarm design):**
+- "Lost contact" is spoken at most once a minute per vehicle, so a second outage inside a minute is silent.
+- "Too close" alarms sound every few seconds when the vehicles are parked together before leaving.
+
+Field items, unverified:
+- on the app phone, GPS often went quiet after switching to another app, and network positions at up to ±100 m flapped while parked (05:08–05:21)
+- the app's automatic restart never fired: no stop happened
+
 ### Decisions (04:23)
 
 - **3e-a: restart the trip automatically** when Android closes the app's page mid-trip. Claude's details, for Ryan to confirm:

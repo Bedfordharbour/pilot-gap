@@ -125,6 +125,14 @@ const old = await p.evaluate(() => window.__pg.seal({id:'q', lat:-33.86, lon:121
 await p.evaluate(t => window.__pg.onRelayMessage('lead', t, false), old);
 await p.waitForTimeout(300);
 check('live message from a phone with a slow clock is fresh', await p.evaluate(() => Date.now() - window.__pg.S.peers.lead.t < 5000));
+// a live backlog: a normal message first (sets the delay), then one 40 s old arriving late counts as 40 s old
+const t2now = await p.evaluate(() => window.__pg.seal({id:'q2', lat:-33.86, lon:121.89, spd:22, hdg:0, acc:5, t:Date.now(), s:Date.now()}));
+await p.evaluate(t => window.__pg.onRelayMessage('truck', t, false), t2now);
+const t2old = await p.evaluate(() => window.__pg.seal({id:'q2', lat:-33.86, lon:121.89, spd:22, hdg:0, acc:5, t:Date.now()-40000, s:Date.now()-40000}));
+await p.evaluate(t => window.__pg.onRelayMessage('truck', t, false), t2old);
+await p.waitForTimeout(300);
+check('late live message (backlog) shows its true age', await p.evaluate(() => { const a = Date.now() - window.__pg.S.peers.truck.t; return a > 35000 && a < 45000; }), await p.evaluate(() => Date.now() - window.__pg.S.peers.truck.t));
+check('no "lost contact" for a vehicle never seen live this trip', await p.evaluate(() => !/lost contact with Truck/.test(window.__pg.logText(window.__pg.S.log))));
 await p.evaluate(t => window.__pg.onRelayMessage('lead', t, true), old);
 await p.waitForTimeout(300);
 check('stored message keeps its own (old) time', await p.evaluate(() => Date.now() - window.__pg.S.peers.lead.t > 50000));
@@ -237,6 +245,14 @@ check('app: no speed worked out from a rough (network) position', await a.evalua
 await a.evaluate(() => window.__pgNativeFix(-33.8615, 121.8912, 5, null, null)); await a.evaluate(() => window.__pgNativeFix(-33.8615 + 0.0004, 121.8912, 60, null, null, true)); await a.waitForTimeout(200);
 check('app: no speed worked out from a network position (app marks it)', await a.evaluate(() => window.__pg.S.lastFix.spd == null && window.__pg.S.lastFix.net === true), await a.evaluate(() => window.__pg.S.lastFix));
 check('app: 10-minute upload runs from the tick, not a page timer', uploads.length === upBefore + 1 && /-truck-AppDriver-/.test(uploads[uploads.length - 1].name), uploads.length - upBefore);
+
+// relay connected but silent for 45 s (seen in the trial): treated as dead and replaced
+await a.evaluate(() => { const S = window.__pg.S; S.client = { removeAllListeners(){}, on(){}, end(){} }; S.connected = true; S.lastRx = Date.now() - 60000; window.__pg.periodic(Date.now()); });
+check('app: silent relay connection is treated as dead and replaced', await a.evaluate(() => /connection treated as dead/.test(window.__pg.logText(window.__pg.S.log)) && /starting a new connection/.test(window.__pg.logText(window.__pg.S.log))));
+// a vehicle not heard from for 10 min is removed from the screen
+await a.evaluate(() => { window.__pg.S.peers.lead = { lat: -33.85, lon: 121.89, spd: 0, hdg: 0, acc: 5, t: Date.now() - 11 * 60000 }; window.__pgNativeTick(); });
+await a.evaluate(() => { window.__pgNativeTick && window.__pg.periodic(Date.now()); }); await a.waitForTimeout(1200);
+check('app: vehicle silent for 10 min removed', await a.evaluate(() => !window.__pg.S.peers.lead && /not heard from for 10 min/.test(window.__pg.logText(window.__pg.S.log))));
 await a.click('#stop'); await a.waitForTimeout(800);
 const calls3 = await a.evaluate(() => window.__calls.map(c => c[0]));
 check('app: End trip stops background tracking', calls3.includes('tripEnd'), calls3);

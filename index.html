@@ -252,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.2 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.3 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -268,7 +268,8 @@ var LOG_MAX = 6000;           // trip log entries kept on the phone
 var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry continues the same log
 var STALE_MS = 15000;      // no update for 15 s = lost contact
 var STORED_MAX_MS = 600000; // a stored relay message older than 10 min is from an old trip: ignore it
-var REPUBLISH_MS = 10000;   // re-send position and gap settings every 10 s
+var REPUBLISH_MS = 10000;
+var RELAY_SILENT_MS = 45000;  // connected but nothing received (not even our own messages) for 45 s: the connection is dead   // re-send position and gap settings every 10 s
 var UPLOAD_TIMEOUT_MS = 30000;
 var RESUME_MS = 600000;   // app only: a trip that stopped without End trip less than 10 min ago restarts by itself (Ryan 3e-a, 19 Oct)
 var UNSENT_MAX = 3;         // older trip logs kept on the phone until they reach the office
@@ -435,7 +436,7 @@ function uploadLog(reason){
   postLog(name,logText(log),"trip")
     .then(function(j){
       S.uploading=false;
-      if(j && j.ok){ if(!S.uploadAgain && $("run").hidden) store.set("uppending","");   /* during a trip more lines keep coming, so it stays pending */ store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
+      if(j && j.ok){ if(!S.uploadAgain && $("run").hidden) store.set("uppending","");   /* during a trip more lines keep coming, so it stays pending */ store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); L("upload","log sent ("+reason+")"); }
       else { store.set("uppending","1"); setUpStatus("Log not sent: "+((j&&j.error)||"no reply")+". Will try again."); L("upload","refused: "+((j&&j.error)||"no reply")); }
       if(S.uploadAgain){ var r=S.uploadAgain; S.uploadAgain=""; uploadLog(r); }
     }).catch(function(e){
@@ -558,12 +559,12 @@ function connectRelay(){
   S.client=c;
   S.relayEvtT=Date.now();
   function mine(){ return c===S.client; }   // ignore late events from a client that has been replaced
-  c.on("connect",function(){ if(!mine()) return; S.connected=true; S.relayEvtT=Date.now(); L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
+  c.on("connect",function(){ if(!mine()) return; S.connected=true; S.lastRx=Date.now(); S.relayEvtT=Date.now(); L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
   c.on("close",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","connection closed"); S.connected=false; });
   c.on("offline",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","offline"); S.connected=false; });
   c.on("reconnect",function(){ if(!mine()) return; S.relayEvtT=Date.now(); L("relay","trying to reconnect"); });
   c.on("error",function(e){ if(!mine()) return; S.relayEvtT=Date.now(); L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
-  c.on("message",function(t,payload,packet){ if(!mine()) return; onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
+  c.on("message",function(t,payload,packet){ if(!mine()) return; S.lastRx=Date.now(); onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
 }
 function onRelayMessage(role, txt, stored){
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
@@ -592,6 +593,14 @@ function handleMsg(role, d, stored){
   }
   if(typeof d.lat!=="number"||typeof d.lon!=="number"||typeof d.t!=="number") return;
   if(Math.abs(d.lat)>90||Math.abs(d.lon)>180) return;
+  if(!stored && role!==S.role){
+    // Live message: work out its age from the sender's own times, corrected by the smallest delay seen from that phone
+    // (covers network delay and a wrong phone clock). A backlog delivered late, or an old fix, then shows its true age.
+    var sent = typeof d.s==="number" ? d.s : d.t, lag = now-sent;
+    S.skew=S.skew||{};
+    if(S.skew[role]==null || lag<S.skew[role]) S.skew[role]=lag;
+    at = Math.min(now, d.t+S.skew[role]);
+  }
   if(role===S.role){
     if(d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
     return;
@@ -605,7 +614,7 @@ function publishMine(force){
   if(!force && now-S.lastPub<2000) return;
   if(now-f.time>30000) return;             // GPS has gone quiet: stop claiming a fresh position
   S.lastPub=now;
-  var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:now};
+  var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:f.time,s:now};   // t = when the position was measured, s = when sent (trial 19 Oct: an old fix was sent as new)
   var c=S.client, tp=topic(S.role);
   seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
 }
@@ -624,6 +633,10 @@ function periodic(now){
     if(S.client && S.connected && now-(S.lastSend||0)>20000){ try{ S.client.publish(TOPIC_BASE+S.topicId+"/hb","",{qos:0}); S.lastSend=now; }catch(e){} }  // keeps the relay connection alive with no GPS
   }
   if(S.connected && now-(S.lastUpload||S.tripStart)>=UPLOAD_EVERY_MS){ S.lastUpload=now; uploadLog("timer"); }
+  if(S.client && S.connected && now-(S.lastRx||now)>RELAY_SILENT_MS){   // trial 19 Oct: the connection died in the app's background and nothing noticed for 15 min
+    L("relay","nothing received for 45 s (not even this phone's own messages): connection treated as dead");
+    S.connected=false; S.relayEvtT=0;
+  }
   if(S.client && !S.connected && now-(S.relayEvtT||0)>30000){   // the relay library's own retry timer is not running
     // replace the client rather than calling reconnect(), which can leave two connections fighting over one id
     var old=S.client; S.client=null; L("relay","no relay activity for 30 s, starting a new connection");
@@ -722,7 +735,9 @@ function alarms(results,now){
   chain().forEach(function(r){
     if(r===S.role) return;
     var p=S.peers[r]; var stale = p && now-p.t>STALE_MS;
-    if(stale && !S.wasStale[r]){ L("peer","lost contact with "+nm(r)); if(!muted){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),60000); } }
+    if(p && !stale) S.everLive[r]=true;
+    if(p && now-p.t>STORED_MAX_MS){ delete S.peers[r]; L("peer",nm(r)+" not heard from for 10 min: removed from the screen"); S.wasStale[r]=false; return; }
+    if(stale && !S.wasStale[r] && S.everLive[r]){ L("peer","lost contact with "+nm(r)); if(!muted){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),60000); } }
     if(!stale && S.wasStale[r] && p) L("peer",nm(r)+" back");
     S.wasStale[r]=!!stale;
   });
@@ -969,7 +984,7 @@ function start(){
   try{ if(!practice) history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
-  S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
+  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
   S.lastRepub=0; S.lastUpload=0; S.lastSend=0; S.oldIgnored={};
   // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
@@ -1076,7 +1091,7 @@ $("copyLink").addEventListener("click",function(){
 function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($("shareLink")); var s=getSelection(); s.removeAllRanges(); s.addRange(r); $("copied").textContent="Selected, copy it now"; }catch(e){} }
 document.addEventListener("visibilitychange",function(){
   if($("run").hidden) return;
-  if(document.visibilityState==="visible"){ L("phone","back on this page"); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
+  if(document.visibilityState==="visible"){ S.lastRx=Math.max(S.lastRx||0,Date.now()-RELAY_SILENT_MS+15000); L("phone","back on this page"); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
   else { L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
 });
 window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });

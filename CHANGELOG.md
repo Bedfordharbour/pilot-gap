@@ -2,6 +2,17 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.3 — 19 Oct 2026 (page only; app stays 1.0.2)
+
+Fault fixes from the first four-phone road test (19 Oct 04:47–05:31: Truck 1 in the app, lead in Samsung Internet, rear on iPhone, Truck 2 in Chrome).
+- **Dead relay connection noticed.** In the app's background the connection died at about 05:08 and nothing noticed until 05:23. Now, if nothing at all arrives for 45 s (not even this phone's own messages), the connection is replaced.
+- **Positions carry the time they were measured.** An old GPS fix was being sent as new, giving false gaps (165–513 m when the real gap was about 540 m, and "Lead back at 594 m" from a 60 s old position).
+- **Late messages show their true age.** A backlog delivered when a phone woke counted as live (rear pilot: "Rear gap too close, 27 m" when the gap was about 900 m). Age is now worked out from the sender's times, corrected by the smallest delay seen from that phone, so a wrong phone clock still works.
+- **No "Lost contact" for a vehicle not seen live on this trip** (false warnings at every start from stored positions 1–9 min old).
+- **A vehicle not heard from for 10 minutes is removed from the screen** (a rear gap of 16,104 m from a 25 min old position stayed on Truck 1).
+- 10-minute uploads are now logged when they succeed.
+- Smoke test: 88 checks.
+
 ## 1.5.2 — 19 Oct 2026 (page) and Android app 1.0.2
 
 - **Trip restarts by itself in the app (Ryan, decision 3e-a, 19 Oct 04:23).** If the trip stopped without End trip less than 10 minutes ago (Android closed the page, the app was swiped away or killed), the next time the page loads it starts the same trip again with the same role and code, says "Pilot Gap restarted the trip", and logs it. End trip, Change role and Update now do not restart. Browser: no automatic restart.
