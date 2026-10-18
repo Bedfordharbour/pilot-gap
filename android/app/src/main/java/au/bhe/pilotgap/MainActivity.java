@@ -49,7 +49,8 @@ public class MainActivity extends Activity {
     TextToSpeech tts;
     volatile boolean ttsReady;
     ToneGenerator tone;
-    boolean triedCache;
+    boolean triedCache, cacheLoadStarted;
+    static long lastRendererRestart;
     int speakId;
 
     @Override
@@ -87,9 +88,18 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) {
+                if (v.getSettings().getCacheMode() == WebSettings.LOAD_CACHE_ONLY) cacheLoadStarted = true;
+            }
+
+            @Override
             public void onPageFinished(WebView v, String url) {
-                // After showing the saved copy, go back to normal loading so log upload and update check can use the network.
-                if (v.getSettings().getCacheMode() == WebSettings.LOAD_CACHE_ONLY) v.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+                // After the saved copy has loaded, go back to normal loading so log upload and update check can use the network.
+                // Only after the cache-only load itself has started, not when the failed first load finishes.
+                if (cacheLoadStarted && v.getSettings().getCacheMode() == WebSettings.LOAD_CACHE_ONLY) {
+                    cacheLoadStarted = false;
+                    v.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+                }
             }
 
             @Override
@@ -98,7 +108,9 @@ public class MainActivity extends Activity {
                 if (TripService.running) TripService.appClosed(MainActivity.this);
                 if (web == v) { setContentView(new View(MainActivity.this)); web = null; }
                 try { v.destroy(); } catch (Exception ignored) { }
-                recreate();
+                long now = System.currentTimeMillis();
+                if (now - lastRendererRestart > 60000) { lastRendererRestart = now; recreate(); }   // once a minute at most, so a page that keeps crashing can't loop
+                else finish();
                 return true;
             }
 
@@ -213,7 +225,7 @@ public class MainActivity extends Activity {
         if (current.get() == this) current = new WeakReference<>(null);
         if (TripService.running) TripService.appClosed(this);
         if (tts != null) tts.shutdown();
-        if (tone != null) tone.release();
+        if (tone != null) { ToneGenerator t = tone; tone = null; t.release(); }
         if (web != null) web.destroy();
         super.onDestroy();
     }
@@ -245,6 +257,14 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public void beep(int ms) {
             if (tone != null) tone.startTone(ToneGenerator.TONE_PROP_BEEP2, Math.max(50, Math.min(ms, 1000)));
+        }
+
+        /** The alarm's double beep, timed here because page timers are slowed behind other apps. */
+        @JavascriptInterface public void beepTwice(int ms) {
+            if (tone == null) return;
+            int d = Math.max(50, Math.min(ms, 1000));
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, d);
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> { ToneGenerator t = tone; if (t != null) t.startTone(ToneGenerator.TONE_PROP_BEEP2, d); }, 280);
         }
 
         @JavascriptInterface public void vibrate() {

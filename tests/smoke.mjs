@@ -195,7 +195,7 @@ await ctxApp.addInitScript(() => {
   window.__calls = [];
   const rec = (n) => (...a) => { window.__calls.push([n, ...a]); };
   window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'),
-    beep: rec('beep'), vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
+    beep: rec('beep'), beepTwice: rec('beepTwice'), vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
     appVersion: () => '1.0.0', hasLocation: () => true };
 });
 const a = await ctxApp.newPage(); a.on('pageerror', e => errors.push('app: ' + e.message));
@@ -215,9 +215,9 @@ check('app: GPS fixes from the app are used', await a.evaluate(() => !!window.__
 const lead = await a.evaluate(() => window.__pg.seal({id:'L', lat:-33.8615+3000/111320, lon:121.8912, spd:22, hdg:0, acc:5, t:Date.now()}));
 await a.evaluate(t => window.__pg.onRelayMessage('lead', t, false), lead);
 await a.evaluate(() => window.__pgNativeTick()); await a.waitForTimeout(1500);
-const calls2 = await a.evaluate(() => window.__calls.filter(c => ['say','beep','vibrate'].includes(c[0])).map(c => c[0] + (c[1] ? ':' + String(c[1]).slice(0, 30) : '')));
+const calls2 = await a.evaluate(() => window.__calls.filter(c => ['say','beep','beepTwice','vibrate'].includes(c[0])).map(c => c[0] + (c[1] ? ':' + String(c[1]).slice(0, 30) : '')));
 check('app: alarm spoken by the app', calls2.some(c => /^say:Front gap too far/.test(c)), calls2);
-check('app: beep and vibration by the app', calls2.some(c => c.startsWith('beep')) && calls2.includes('vibrate'), calls2);
+check('app: double beep and vibration by the app', calls2.some(c => c.startsWith('beepTwice')) && calls2.includes('vibrate'), calls2);
 await a.evaluate(() => window.__pgNativeEvent('gpsoff')); await a.waitForTimeout(1200);
 check('app: GPS-off warning shown', /GPS \(location\) is turned off/.test(await a.textContent('#banners')), await a.textContent('#banners'));
 await a.evaluate(() => window.__pgNativeEvent('gpson'));
@@ -228,6 +228,9 @@ await a.evaluate(() => window.__pgNativeEvent('gpson'));
 const upBefore = uploads.length;
 await a.evaluate(() => { const S = window.__pg.S; S.connected = true; S.lastUpload = Date.now() - 11 * 60000; window.__pg.periodic(Date.now()); S.connected = false; });
 await a.waitForTimeout(800);
+check('app: log stays marked unsent during a trip after a 10-minute upload', await a.evaluate(() => localStorage.getItem('pg_uppending') === '1'));
+await a.evaluate(() => window.__pgNativeFix(-33.8615 + 0.02, 121.8912, 1500, null, null)); await a.waitForTimeout(200);
+check('app: no speed worked out from a rough (network) position', await a.evaluate(() => window.__pg.S.lastFix.spd == null), await a.evaluate(() => window.__pg.S.lastFix.spd));
 check('app: 10-minute upload runs from the tick, not a page timer', uploads.length === upBefore + 1 && /-truck-AppDriver-/.test(uploads[uploads.length - 1].name), uploads.length - upBefore);
 await a.click('#stop'); await a.waitForTimeout(800);
 const calls3 = await a.evaluate(() => window.__calls.map(c => c[0]));

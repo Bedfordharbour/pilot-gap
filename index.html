@@ -397,9 +397,11 @@ function refreshUpLine(){
 }
 function postLog(name,text){
   var ac = window.AbortController ? new AbortController() : null;
+  S.uploadAbort=ac; S.uploadStart=Date.now();
   var tm = ac ? setTimeout(function(){ try{ ac.abort(); }catch(e){} },UPLOAD_TIMEOUT_MS) : 0;
   return fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:UPLOAD_KEY,name:name,text:text}),signal:ac?ac.signal:undefined})
-    .then(function(r){ clearTimeout(tm); return r.json(); }, function(e){ clearTimeout(tm); throw e; });
+    .then(function(r){ return r.json(); })
+    .then(function(j){ clearTimeout(tm); if(S.uploadAbort===ac) S.uploadAbort=null; return j; }, function(e){ clearTimeout(tm); if(S.uploadAbort===ac) S.uploadAbort=null; throw e; });
 }
 // Older trip logs that had not reached the office when a new log started (kept, not overwritten).
 function unsent(){ try{ var u=JSON.parse(store.get("unsent","[]")); return Array.isArray(u)?u:[]; }catch(e){ return []; } }
@@ -409,11 +411,14 @@ function keepUnsent(name,text){
   try{ localStorage.setItem("pg_unsent",JSON.stringify(u)); }catch(e){ try{ localStorage.setItem("pg_unsent",JSON.stringify(u.slice(-1))); }catch(e2){} }
 }
 function sendUnsent(){
+  if(S.uploading) return;   // one upload at a time
   var u=unsent(); if(!u.length || S.sendingOld || !UPLOAD_URL || navigator.onLine===false) return;
   S.sendingOld=true; var x=u[0];
   postLog(x.name,x.text).then(function(j){
     S.sendingOld=false;
-    if(j && j.ok){ var r=unsent().filter(function(y){ return y.name!==x.name; }); store.set("unsent",JSON.stringify(r)); L("upload","older log sent: "+x.name); sendUnsent(); }
+    var r=unsent().filter(function(y){ return y.name!==x.name; });
+    if(j && j.ok){ store.set("unsent",JSON.stringify(r)); L("upload","older log sent: "+x.name); sendUnsent(); }
+    else if(r.length){ r.push(x); store.set("unsent",JSON.stringify(r)); }   // refused: try the others first next time
   }).catch(function(){ S.sendingOld=false; });
 }
 function uploadLog(reason){
@@ -428,7 +433,7 @@ function uploadLog(reason){
   postLog(name,logText(log))
     .then(function(j){
       S.uploading=false;
-      if(j && j.ok){ if(!S.uploadAgain) store.set("uppending",""); store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
+      if(j && j.ok){ if(!S.uploadAgain && $("run").hidden) store.set("uppending","");   /* during a trip more lines keep coming, so it stays pending */ store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
       else { store.set("uppending","1"); setUpStatus("Log not sent: "+((j&&j.error)||"no reply")+". Will try again."); L("upload","refused: "+((j&&j.error)||"no reply")); }
       if(S.uploadAgain){ var r=S.uploadAgain; S.uploadAgain=""; uploadLog(r); }
     }).catch(function(e){
@@ -534,12 +539,13 @@ function connectRelay(){
   var c = mqtt.connect(RELAY,{clientId:"pg_"+myId, keepalive:30, reconnectPeriod:3000, connectTimeout:10000, clean:true});
   S.client=c;
   S.relayEvtT=Date.now();
-  c.on("connect",function(){ S.connected=true; S.relayEvtT=Date.now(); L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
-  c.on("close",function(){ S.relayEvtT=Date.now(); if(S.connected) L("relay","connection closed"); S.connected=false; });
-  c.on("offline",function(){ S.relayEvtT=Date.now(); if(S.connected) L("relay","offline"); S.connected=false; });
-  c.on("reconnect",function(){ S.relayEvtT=Date.now(); L("relay","trying to reconnect"); });
-  c.on("error",function(e){ S.relayEvtT=Date.now(); L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
-  c.on("message",function(t,payload,packet){ onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
+  function mine(){ return c===S.client; }   // ignore late events from a client that has been replaced
+  c.on("connect",function(){ if(!mine()) return; S.connected=true; S.relayEvtT=Date.now(); L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
+  c.on("close",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","connection closed"); S.connected=false; });
+  c.on("offline",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","offline"); S.connected=false; });
+  c.on("reconnect",function(){ if(!mine()) return; S.relayEvtT=Date.now(); L("relay","trying to reconnect"); });
+  c.on("error",function(e){ if(!mine()) return; S.relayEvtT=Date.now(); L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
+  c.on("message",function(t,payload,packet){ if(!mine()) return; onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
 }
 function onRelayMessage(role, txt, stored){
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
@@ -600,10 +606,13 @@ function periodic(now){
     if(S.client && S.connected && now-(S.lastSend||0)>20000){ try{ S.client.publish(TOPIC_BASE+S.topicId+"/hb","",{qos:0}); S.lastSend=now; }catch(e){} }  // keeps the relay connection alive with no GPS
   }
   if(S.connected && now-(S.lastUpload||S.tripStart)>=UPLOAD_EVERY_MS){ S.lastUpload=now; uploadLog("timer"); }
-  if(S.client && !S.connected && now-(S.relayEvtT||0)>15000){   // the relay library's own retry timer is not running
-    S.relayEvtT=now; L("relay","reconnecting");
-    try{ S.client.reconnect(); }catch(e){ L("relay","reconnect failed: "+((e&&e.message)||"")); }
+  if(S.client && !S.connected && now-(S.relayEvtT||0)>30000){   // the relay library's own retry timer is not running
+    // replace the client rather than calling reconnect(), which can leave two connections fighting over one id
+    var old=S.client; S.client=null; L("relay","no relay activity for 30 s, starting a new connection");
+    try{ old.removeAllListeners(); old.on("error",function(){}); old.end(true); }catch(e){}
+    connectRelay();
   }
+  if(S.uploading && S.uploadAbort && now-S.uploadStart>UPLOAD_TIMEOUT_MS){ try{ S.uploadAbort.abort(); }catch(e){} S.uploadAbort=null; }   // page timers may be frozen: abort here too
 }
 function cfgText(c){ return "front "+fmtRange(c.ranges.front)+(c.trucks===2?", between trucks "+fmtRange(c.ranges.mid):"")+", rear "+fmtRange(c.ranges.rear)+", "+c.trucks+" truck"+(c.trucks===2?"s":""); }
 
@@ -615,8 +624,9 @@ function onFix(p){
   var prev=S.lastFix;
   if(prev){
     var d=dist(prev,fix), dt=(now-prev.time)/1000;
-    if(fix.spd==null && dt>0.5) fix.spd=d/dt;
-    if(fix.hdg==null) fix.hdg = d>5 ? bearing(prev,fix) : prev.hdg;
+    var rough = fix.acc>100 || prev.acc>100;   // e.g. a mobile-network position: jumps would give a false speed
+    if(fix.spd==null && dt>0.5 && !rough) fix.spd=d/dt;
+    if(fix.hdg==null) fix.hdg = (d>5 && !rough) ? bearing(prev,fix) : prev.hdg;
   }
   if(!prev) L("gps","first fix, accuracy "+Math.round(fix.acc)+" m");
   S.lastFix=fix; S.gpsError="";
@@ -708,7 +718,10 @@ function alarms(results,now){
     }
   });
   if(bad && now-S.lastBeep>5000){
-    S.lastBeep=now; beep(1150,0.18,0); beep(1150,0.18,0.28); L("alarm","beep");
+    S.lastBeep=now;
+    if(NATIVE && typeof NATIVE.beepTwice==="function"){ try{ NATIVE.beepTwice(180); }catch(e){} }   // app 1.0.1+: timed by the app, not a page timer
+    else { beep(1150,0.18,0); beep(1150,0.18,0.28); }
+    L("alarm","beep");
     try{ if(NATIVE) NATIVE.vibrate(); else if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
   }
 }
@@ -948,6 +961,7 @@ function start(){
     if(old.length && logName() && store.get("uppending","")==="1") keepUnsent(logName(),logText(old));   // previous trip not yet at the office: keep it
     newLogName(); store.set("logkey",logKey); store.set("uppending","");
   }
+  if(!S.practice) store.set("uppending","1");   // a running trip always has lines not yet at the office; cleared when End trip's upload succeeds
   L("start","version "+VERSION+", role "+nm(S.role)+(S.practice?", PRACTICE":"")+", gaps "+cfgText(S.cfg)+(S.role==="truck"?" (set here)":" (defaults until Truck 1 connects)"));
   var ag=agreement(); L("start","location agreement: "+(ag?ag.name+", agreed "+stamp(ag.t)+" (wording v"+ag.v+")":"none (practice)"));
   if(NATIVE) L("start","running in the Android app "+NATIVE.appVersion()+" (keeps going behind other apps)");
@@ -981,7 +995,7 @@ function teardown(clearMine){
   S.connected=false; S.lastFix=null;
   wakeOff();
 }
-function goSetup(){ L("end","role change"); saveLogLocal(); teardown(true); $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
+function goSetup(){ var wasPractice=S.practice; L("end","role change"); saveLogLocal(); teardown(true); if(!wasPractice){ store.set("uppending","1"); setTimeout(function(){ uploadLog("role change"); },0); } $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
 function showLastLog(justEnded){
   var l=loadLog(), box=$("lastLog");
   if(!l.length){ box.hidden=true; return; }
@@ -1061,6 +1075,7 @@ if(store.get("uppending","")==="1") setTimeout(function(){ uploadLog("page opene
 else if(unsent().length) setTimeout(sendUnsent,2000);
 $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
+setInterval(function(){ if($("run").hidden){ if(store.get("uppending","")==="1") uploadLog("retry"); else sendUnsent(); } },120000);   // on the start screen, keep trying to send waiting logs
 
 window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,twoTrucks:twoTrucks};
 })();

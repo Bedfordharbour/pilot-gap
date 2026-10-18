@@ -33,7 +33,8 @@ public class TripService extends Service implements LocationListener {
     LocationManager lm;
     final Handler handler = new Handler(Looper.getMainLooper());
     long lastFixAt, lastGpsAt;
-    static final long NET_AFTER_MS = 10000;   // use a mobile-network position only when GPS has been quiet this long
+    static final long NET_AFTER_MS = 10000;
+    static final float NET_MAX_ACC_M = 100f;   // only use a network position this good (Wi-Fi based, typically); for Ryan to confirm   // use a mobile-network position only when GPS has been quiet this long
 
     final Runnable tick = new Runnable() {
         @Override public void run() {
@@ -83,6 +84,7 @@ public class TripService extends Service implements LocationListener {
         long now = System.currentTimeMillis();
         if (LocationManager.GPS_PROVIDER.equals(l.getProvider())) lastGpsAt = now;
         else if (now - lastGpsAt < NET_AFTER_MS) return;   // GPS is working: ignore the rougher network position
+        else if (!l.hasAccuracy() || l.getAccuracy() > NET_MAX_ACC_M) return;   // too rough: a cell-tower position can be km out and would set off false alarms
         lastFixAt = now;
         MainActivity a = MainActivity.current.get();
         if (a != null) a.deliverFix(l);
