@@ -4,3 +4,9 @@ tests/phone-two-trucks.png
 tests/phone-trip-ended.png
 tests/phone-update.png
 tests/phone-agreement.png
+tests/phone-app.png
+tests/phone-android-browser.png
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

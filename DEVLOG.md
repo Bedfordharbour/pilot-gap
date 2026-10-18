@@ -67,11 +67,21 @@ Ryan's decisions (20:18):
 - Seen in the log: the relay drops whenever the phone leaves the page and reconnects within seconds of returning; first connection twice took ~10 s ("connack timeout", public relay slow to answer). Watch on the trial.
 - Wording "waiting for Truck 1" shown on Truck 1's own phone before its GPS fix; change to "waiting for GPS on this phone" proposed, **Ryan: not now**.
 
+### Android app 1.0.0 (21:57–22:15)
+
+- **Ryan: "Finish the project. Everything is working ok atm we can roll it back if it doesn't work"** (21:57) — the app is built now instead of after the trial (overrides the "after the trial" part of 9a). Rollback: uninstall the app and use the browser; the page works the same either way.
+- **Design (Claude's, for Ryan to confirm):** thin Android shell (WebView of the live page) instead of a separate native app. Keeps one set of screens and gap logic, so app and browser can't drift apart (the main risk raised in 9a). The native part copies DriveCheck's approach: foreground location service, wake lock, permanent notification, "stopped" alert if the app is closed mid-trip. The service feeds GPS into the page and drives the page once a second, because Android slows a hidden page's own timers.
+- **Unverified until tested on a real phone:** that a WebView keeps its relay connection and keeps running the page behind other apps for a whole trip. If it doesn't, the fallback is moving the relay and gap check into the service (more code, two copies of the logic).
+- Signing key: new key for Pilot Gap (not DriveCheck's), certificate SHA-256 starting `5b2fdb16`. Kept outside the source; backed up to Dropbox `Claude/Projects/PilotGap/signing/`. Every later version must use the same key or it won't install over the old one.
+- Distribution: APK published with the page at `app/PilotGap.apk` (latest) and `app/PilotGap-<version>.apk`. No Play Store. Android browsers see a download box.
+- Not on iPhone (no change: iPhone users stay on the web page).
+
 ### Faults found
 
 - **Settings button did nothing (fixed in `fe6b45f`).** Cause: `.panel{display:flex}` overrode the `hidden` attribute, so the panel was always shown at the bottom of the page and the button only toggled an attribute with no visible effect. Fix: `[hidden]{display:none!important}`. Lesson: test by looking at the screen at phone size, not only by checking element state in code. `tests/smoke.mjs` now checks visibility.
 - **Freshness judged by the sender's clock (fixed in 1.2.1, found in audit, 18 Oct 20:30).** Since 1.0.0, a position's age was worked out from the sending phone's clock. A phone whose clock ran 15 s or more slow would always show as "lost" on the others. Not seen in use (phone clocks are normally network-set). Fix: live messages are timed by when they arrive; stored messages replayed on connect keep the sender's time so an old position is not shown as fresh. Smoke test checks both.
 - **Real trip continued a practice log (found in testing, fixed before release of 1.4.0).** The log carried on across practice and real trips within 6 h, so the uploaded file was named after the practice role and "unknown" driver. Fix: a log continues only for the same kind of trip, role and driver.
+- **App never connected to the relay (found in testing before release of 1.5.0).** In the page, starting the app's background tracking was written as an alternative to the relay set-up instead of alongside it. The in-app test caught it (no scramble key, no connection). Fixed by starting them separately.
 - **Truck gap 500–2000 m on phone unw5l7 (open, 18 Oct 21:44).** The first uploaded log (driver Dave, Truck 1) shows "between trucks 500–2000 m, 2 trucks (set here)" at 21:09:15. Defaults are 0–100 m in every version (checked 1.1.0–1.4.1). Ryan did not set it. Possible causes: someone typed it after ticking "Second truck" (the row appears under Front and looks the same), or the browser refilled the boxes after a refresh (tested by refreshing 1.0 into 1.4.1 in a test browser: not reproduced). Precaution in 1.4.2: autocomplete="off" on all gap and tick boxes. The wrong value stays saved on that phone until Truck 1 corrects it on the start screen.
 - **Practice speeds unrealistic (fixed in `2bf6d57`).** The pretend gap changed too fast, giving a lead pilot speed of 152 km/h. Slowed down.
 

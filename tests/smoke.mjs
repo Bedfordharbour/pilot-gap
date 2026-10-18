@@ -168,6 +168,54 @@ check('practice trips are not sent', uploads.length === before, uploads.length -
 check('practice trip started its own log, not the real one', await p.evaluate(() => /-lead-/.test(localStorage.getItem('pg_logname')) && localStorage.getItem('pg_logkey').startsWith('P|')));
 check('no script errors', errors.length === 0, errors);
 
+// ---- Inside the Android app (the app's side replaced by a stand-in that records calls) ----
+const ctxApp = await b.newContext({ viewport: { width: 375, height: 812 } });
+await ctxApp.addInitScript(() => {
+  window.__calls = [];
+  const rec = (n) => (...a) => { window.__calls.push([n, ...a]); };
+  window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'),
+    beep: rec('beep'), vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
+    appVersion: () => '1.0.0', hasLocation: () => true };
+});
+const a = await ctxApp.newPage(); a.on('pageerror', e => errors.push('app: ' + e.message));
+await a.goto('http://localhost:8765/'); await a.waitForTimeout(300);
+check('app: download box hidden inside the app', !(await a.isVisible('#appBox')));
+await a.evaluate(() => window.__pg.setUploadUrl('/upload'));
+await a.click('[data-role=truck]'); await a.click('#start'); await a.waitForTimeout(200);
+await a.fill('#agreeName', 'App Driver'); await a.click('#agreeYes');
+await a.waitForFunction(() => window.__pg.S.key !== null, null, { timeout: 15000 });
+const calls1 = await a.evaluate(() => window.__calls.map(c => c[0]));
+check('app: Start starts background tracking', calls1.includes('tripStart'), calls1);
+check('app: App shown in the status row', await a.isVisible('#appWrap'));
+await a.evaluate(() => window.__pgNativeFix(-33.8615, 121.8912, 6, 22.2, 90));
+await a.waitForTimeout(300);
+check('app: GPS fixes from the app are used', await a.evaluate(() => !!window.__pg.S.lastFix && Math.abs(window.__pg.S.lastFix.lat + 33.8615) < 1e-6 && window.__pg.S.lastFix.spd === 22.2));
+// lead pilot 3 km ahead -> front gap too far -> alarm through the app's voice, beep and vibration
+const lead = await a.evaluate(() => window.__pg.seal({id:'L', lat:-33.8615+3000/111320, lon:121.8912, spd:22, hdg:0, acc:5, t:Date.now()}));
+await a.evaluate(t => window.__pg.onRelayMessage('lead', t, false), lead);
+await a.evaluate(() => window.__pgNativeTick()); await a.waitForTimeout(1500);
+const calls2 = await a.evaluate(() => window.__calls.filter(c => ['say','beep','vibrate'].includes(c[0])).map(c => c[0] + (c[1] ? ':' + String(c[1]).slice(0, 30) : '')));
+check('app: alarm spoken by the app', calls2.some(c => /^say:Front gap too far/.test(c)), calls2);
+check('app: beep and vibration by the app', calls2.some(c => c.startsWith('beep')) && calls2.includes('vibrate'), calls2);
+await a.evaluate(() => window.__pgNativeEvent('gpsoff')); await a.waitForTimeout(1200);
+check('app: GPS-off warning shown', /GPS \(location\) is turned off/.test(await a.textContent('#banners')), await a.textContent('#banners'));
+await a.evaluate(() => window.__pgNativeEvent('gpson'));
+await a.click('#stop'); await a.waitForTimeout(800);
+const calls3 = await a.evaluate(() => window.__calls.map(c => c[0]));
+check('app: End trip stops background tracking', calls3.includes('tripEnd'), calls3);
+await a.click('#saveLastLog'); await a.waitForTimeout(200);
+const saved = await a.evaluate(() => window.__calls.find(c => c[0] === 'saveLog'));
+check('app: Save trip log goes through the app', !!saved && /^pilotgap-log-/.test(saved[1]) && /running in the Android app 1\.0\.0/.test(saved[2]), saved && saved[1]);
+await a.screenshot({ path: path.join(root, 'tests', 'phone-app.png') });
+await ctxApp.close();
+// Android browser (not the app) sees the download box
+const ctxDroid = await b.newContext({ viewport: { width: 375, height: 812 }, userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36' });
+const dp = await ctxDroid.newPage(); await dp.goto('http://localhost:8765/'); await dp.waitForTimeout(300);
+check('Android browser: download box shown', await dp.isVisible('#appBox') && (await dp.getAttribute('#appLink', 'href')) === 'app/PilotGap.apk');
+await dp.screenshot({ path: path.join(root, 'tests', 'phone-android-browser.png') });
+await ctxDroid.close();
+check('no script errors (app)', errors.filter(e => e.startsWith('app:')).length === 0, errors);
+
 await b.close(); srv.close();
 console.log(fails.length ? `\n${fails.length} check(s) failed` : '\nAll checks passed');
 process.exit(fails.length ? 1 : 0);

@@ -2,6 +2,14 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.0 — 18 Oct 2026 (page) and Android app 1.0.0
+
+- **Android app 1.0.0** (`app/PilotGap.apk`, source in `android/`). A thin shell around this same page, so screens and gap logic stay one set of code. A background service (like DriveCheck's `DriveService`) keeps GPS, the relay, alarms and the log running while the driver is in Maps or on a call, with a permanent "Pilot Gap is tracking" notification. Alarms are spoken by Android's own voice, with beep and vibration. Back keeps the trip running; End trip stops it. If Android or the driver closes the app mid-trip, a loud notification says "Pilot Gap stopped". Asks once to be left out of battery saving.
+- Page: uses the app's GPS, voice, beep, vibration and log saving when running inside the app; shows "App" in the status row; logs "running in the Android app". Browser users unchanged.
+- Page: Android browsers get a "Download the app" box on the start screen.
+- Found in testing and fixed before release: inside the app, starting background tracking replaced the relay set-up instead of running alongside it, so the app would never have connected.
+- Smoke test: 67 checks (in-app checks use a stand-in for the app).
+
 ## 1.4.2 — 18 Oct 2026
 
 - The browser is told not to refill the gap boxes and tick boxes after a refresh (`autocomplete="off"`), so old values or a Practice mode tick can't come back on their own. Precaution after the 500–2000 m truck gap found on phone unw5l7 (cause not found; see DEVLOG).

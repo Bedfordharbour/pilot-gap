@@ -37,7 +37,19 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 | `DEVLOG.md` | Design decisions, reasons, faults found and how they were fixed |
 | `TESTING.md` | Test checklist and known issues |
 | `tests/smoke.mjs` | Automated phone-size test, run before every push |
+| `android/` | Android app source (shell + background service) |
+| `app/PilotGap.apk` | Latest Android app; older versions as `app/PilotGap-<version>.apk` |
 | `server/upload-log.gs` | Google Apps Script that receives trip logs into Ryan's Google Drive |
+
+## Android app
+
+`app/PilotGap.apk` (served at https://bedfordharbour.github.io/pilot-gap/app/PilotGap.apk). Android browsers see a "Download the app" box on the start screen.
+
+- **What it adds:** keeps tracking, the relay, alarms and the trip log going when the driver switches to Maps or takes a call. A "Pilot Gap is tracking" notification shows while a trip is on. Back keeps the trip running; **End trip** stops it.
+- **How it works:** a thin shell (`android/`) that shows this same page, plus a background service that feeds GPS into the page and keeps it running. Page changes reach the app without a new app version.
+- **Install:** open the link on the phone, allow "install unknown apps" for the browser, install, open, allow location and notifications, and allow "not optimised" for battery when asked.
+- **Build** (needs JDK 17+, Android SDK platform 34, Gradle 8.14): put `pilotgap-release.jks` and `signing.properties` (storePassword, keyAlias, keyPassword) in `~/.pilotgap/` or point `PILOTGAP_SIGNING` at their folder, then in `android/` run `gradle :app:assembleRelease`. Bump `versionCode` and `versionName` in `android/app/build.gradle` every release. The key is backed up in Ryan's Dropbox, `Claude/Projects/PilotGap/signing/`; never put it in this public repository. Certificate SHA-256 starts `5b2fdb16`.
+- **Publish:** copy `android/app/build/outputs/apk/release/app-release.apk` to `app/PilotGap-<version>.apk` and `app/PilotGap.apk`, add a CHANGELOG line, push.
 
 ## Automatic log upload (set-up, once)
 

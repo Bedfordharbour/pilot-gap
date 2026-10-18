@@ -1,0 +1,41 @@
+plugins { id 'com.android.application' }
+
+// Signing files are never in the source. Point PILOTGAP_SIGNING at a folder holding
+// pilotgap-release.jks and signing.properties (storePassword, keyAlias, keyPassword).
+def signingDir = new File(System.getenv('PILOTGAP_SIGNING') ?: (System.getProperty('user.home') + '/.pilotgap'))
+def signingProps = new Properties()
+def propsFile = new File(signingDir, 'signing.properties')
+if (propsFile.exists()) propsFile.withInputStream { signingProps.load(it) }
+
+android {
+    namespace 'au.bhe.pilotgap'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'au.bhe.pilotgap'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            if (propsFile.exists()) {
+                storeFile new File(signingDir, 'pilotgap-release.jks')
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (propsFile.exists()) signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError false }
+}

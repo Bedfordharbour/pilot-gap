@@ -36,6 +36,16 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Mid-trip, the file in Google Drive updates about every 10 minutes.
 - [ ] Out of signal at End trip: "Waiting to send", and it sends when signal returns or the page is next opened.
 
+## Android app (real phone)
+
+- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.0 or later.
+- [ ] Start a real trip: "Pilot Gap is tracking" notification appears; allow battery "not optimised" when asked.
+- [ ] Switch to Google Maps for 10 minutes: the other phones keep seeing this vehicle (no grey "last seen"), and alarms are still spoken.
+- [ ] Take or make a phone call during a trip: same as above.
+- [ ] Screen off (power button) for 10 minutes: same as above.
+- [ ] Swipe the app away during a trip: "Pilot Gap stopped" notification appears.
+- [ ] End trip: the tracking notification goes away; log arrives in Google Drive with "running in the Android app".
+
 ## Update check
 
 - [ ] After a new version is pushed, a phone left open shows "New version … Update now" within about 10–20 minutes (website copy can lag up to 10 min).
@@ -47,6 +57,8 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] The file opens and shows start, relay, gap and sample lines.
 
 ## Known issues
+
+- Android app: running the page behind other apps is unverified on a real phone until the checklist above is done. Some phone makers (for example Samsung, Xiaomi) close background apps harder; the battery "not optimised" setting is needed.
 
 - Phones on 1.0 or 1.1 cannot see phones on 1.2 (different relay channel). Every phone must show version 1.2.0 or later.
 - The default code 123456 is not private; anyone with the page and that code can see the trip.

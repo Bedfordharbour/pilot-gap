@@ -90,6 +90,7 @@ button:focus-visible,.role:focus-visible,input:focus-visible{outline:3px solid v
 .rrow span:first-child{font-weight:600}
 .rrow input{font-size:18px;padding:8px 10px}
 .rview{font-weight:600}
+.applink{display:block;text-align:center;font:600 18px var(--body);padding:12px;border-radius:8px;background:var(--fg);color:var(--bg);text-decoration:none}
 .agreeTitle{font:700 24px/1.1 var(--display);text-transform:uppercase;letter-spacing:.03em;margin:4px 0 0}
 .agreeText{font-size:17px;line-height:1.5;margin:0;background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:12px}
 .logbox{border:1.5px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
@@ -111,6 +112,13 @@ code{font-size:14px;word-break:break-all}
   <div class="wrap">
     <h1><span>Pilot</span> Gap</h1>
     <p class="lede">Live gaps between the lead pilot, the truck or trucks, and the rear pilot.</p>
+
+    <div class="logbox" id="appBox" hidden>
+      <strong>Android app</strong>
+      <span class="note">Keeps tracking and alarms working when you switch to Maps or take a call. Uses the same trips as this page.</span>
+      <a class="applink" id="appLink" href="app/PilotGap.apk" download>Download the app</a>
+      <span class="note">Allow "install unknown apps" for your browser when asked.</span>
+    </div>
 
     <div class="logbox ended" id="updateBox" hidden>
       <strong>New version available</strong>
@@ -189,6 +197,7 @@ code{font-size:14px;word-break:break-all}
       <div class="status">
         <span><span class="dot" id="netDot"></span><span id="netTxt">Relay</span></span>
         <span><span class="dot" id="gpsDot"></span><span id="gpsTxt">GPS</span></span>
+        <span id="appWrap" hidden><span class="dot on"></span>App</span>
         <span id="scrWrap" hidden><span class="dot" id="scrDot"></span><span id="scrTxt">Screen</span></span>
       </div>
     </div>
@@ -243,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.4.2 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -251,6 +260,8 @@ var UPDATE_CHECK_MS = 600000;   // look for a newer version every 10 min
 var UPLOAD_URL = "https://script.google.com/macros/s/AKfycbzj3_RCN2TtS4FGEnKRv1Qq4j3vgdX_FugTKCq4X9clD5xWRb5L1h158oRDvm0iltNaYA/exec";  // Ryan's Google Apps Script (server/upload-log.gs), deployed 18 Oct 21:36
 var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops random posts, it is not a password
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
+var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
+var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
 var LOG_MAX = 6000;           // trip log entries kept on the phone
@@ -319,6 +330,7 @@ function logFileName(log){
 function saveLogFile(log){
   if(!log.length) return;
   var name=logFileName(log), text=logText(log);
+  if(NATIVE){ try{ NATIVE.saveLog(name,text); }catch(e){} return; }
   function download(){
     try{ var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"})); a.download=name;
       document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },2000); }catch(e){}
@@ -566,9 +578,26 @@ function onGpsErr(e){
                e.code===3 ? "Waiting for GPS…" : "GPS unavailable";
 }
 function startGps(){
+  if(NATIVE){ S.gpsError= NATIVE.hasLocation() ? "" : "Allow location for Pilot Gap in the phone's settings, then press Start again."; return; }  // fixes arrive through __pgNativeFix
   if(!("geolocation" in navigator)){ S.gpsError="This browser has no GPS access"; return; }
   S.watchId=navigator.geolocation.watchPosition(onFix,onGpsErr,{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
 }
+
+/* ---------- Android app hooks (called by the app; absent in a browser) ---------- */
+window.__pgNativeFix=function(lat,lon,acc,spd,hdg){
+  if($("run").hidden || S.practice) return;
+  onFix({coords:{latitude:lat,longitude:lon,accuracy:acc,speed:spd,heading:hdg}});
+};
+window.__pgNativeTick=function(){ if(!$("run").hidden && document.visibilityState!=="visible") render(); };  // keeps gaps and alarms going behind other apps
+window.__pgNativeEvent=function(what){
+  var msg={service:"background tracking on",servicefailed:"background tracking could not start",nolocation:"location permission missing",
+           nogps:"GPS could not start",gpsoff:"phone GPS turned off",gpson:"phone GPS turned on"}[what]||what;
+  L("app",msg);
+  if(what==="nolocation") S.gpsError="Allow location for Pilot Gap in the phone's settings, then press Start again.";
+  if(what==="gpsoff") S.gpsError="The phone's GPS (location) is turned off. Turn it on in the quick settings.";
+  if(what==="gpson") S.gpsError="";
+  if(what==="servicefailed") S.cryptoErr="Background tracking could not start. Keep this screen open, and check location is allowed for Pilot Gap.";
+};
 
 /* ---------- practice mode ---------- */
 function simTick(){
@@ -592,6 +621,7 @@ function initAudio(){
   try{ var AC=window.AudioContext||window.webkitAudioContext; if(AC){ S.audio=new AC(); if(S.audio.resume) S.audio.resume(); } }catch(e){}
 }
 function beep(freq,dur,when){
+  if(NATIVE){ var ms=Math.round(dur*1000); if(when) setTimeout(function(){ NATIVE.beep(ms); },Math.round(when*1000)); else NATIVE.beep(ms); return; }
   if(!S.audio) return;
   try{
     var o=S.audio.createOscillator(), g=S.audio.createGain(), t0=S.audio.currentTime+(when||0);
@@ -604,6 +634,7 @@ function say(key,text,every){
   var now=Date.now();
   if(S.lastSpeak[key] && now-S.lastSpeak[key]<every) return;
   S.lastSpeak[key]=now; L("alarm","spoke: "+text);
+  if(NATIVE){ try{ NATIVE.say(text); }catch(e){} return; }
   try{ if("speechSynthesis" in window){ var u=new SpeechSynthesisUtterance(text); u.lang="en-AU"; u.rate=1.05; speechSynthesis.speak(u); } }catch(e){}
 }
 function alarms(results,now){
@@ -626,7 +657,7 @@ function alarms(results,now){
   });
   if(bad && now-S.lastBeep>5000){
     S.lastBeep=now; beep(1150,0.18,0); beep(1150,0.18,0.28); L("alarm","beep");
-    try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
+    try{ if(NATIVE) NATIVE.vibrate(); else if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
   }
 }
 
@@ -862,7 +893,9 @@ function start(){
   if(!S.log.length){ newLogName(); store.set("logkey",logKey); store.set("uppending",""); }
   L("start","version "+VERSION+", role "+nm(S.role)+(S.practice?", PRACTICE":"")+", gaps "+cfgText(S.cfg)+(S.role==="truck"?" (set here)":" (defaults until Truck 1 connects)"));
   var ag=agreement(); L("start","location agreement: "+(ag?ag.name+", agreed "+stamp(ag.t)+" (wording v"+ag.v+")":"none (practice)"));
+  if(NATIVE) L("start","running in the Android app "+NATIVE.appVersion()+" (keeps going behind other apps)");
   L("start","screen: keep on "+(S.keepOn?"on":"off")+", force "+(S.force?"on":"off")+" | "+navigator.userAgent);
+  if(!S.practice && NATIVE){ try{ NATIVE.tripStart(S.role); }catch(e){ L("error","app tripStart: "+e.message); } }
   if(S.practice){ S.simT0=Date.now(); }
   else {
     startGps();
@@ -882,6 +915,7 @@ function start(){
 }
 function teardown(clearMine){
   S.timers.forEach(clearInterval); S.timers=[];
+  if(NATIVE){ try{ NATIVE.tripEnd(); }catch(e){} }
   if(S.watchId!=null){ try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){} S.watchId=null; }
   if(S.client){
     var c=S.client; S.client=null;
@@ -908,7 +942,7 @@ $("newTrip").addEventListener("click",function(){ $("trip").value=randCode(); })
 $("start").addEventListener("click",start);
 $("mute").addEventListener("click",function(){
   if(Date.now()<S.mutedUntil){ S.mutedUntil=0; L("alarm","unmuted"); }
-  else { S.mutedUntil=Date.now()+300000; L("alarm","muted for 5 min"); try{ speechSynthesis.cancel(); }catch(e){} }
+  else { S.mutedUntil=Date.now()+300000; L("alarm","muted for 5 min"); try{ if(NATIVE) NATIVE.stopSpeech(); else speechSynthesis.cancel(); }catch(e){} }
   render();
 });
 $("toggleSettings").addEventListener("click",function(){
@@ -953,7 +987,7 @@ function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($
 document.addEventListener("visibilitychange",function(){
   if($("run").hidden) return;
   if(document.visibilityState==="visible"){ L("phone","back on this page"); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
-  else { L("phone","switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
+  else { L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
 });
 window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });
 
@@ -964,11 +998,13 @@ fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
 pickRole(S.role);
 showLastLog(false);
+$("appWrap").hidden=!NATIVE;
+$("appBox").hidden = !!NATIVE || !/Android/i.test(navigator.userAgent);
 if(store.get("uppending","")==="1") setTimeout(function(){ uploadLog("page opened"); },2000);
 $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 
-window.__pg={uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
+window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
 })();
 </script>
 </body>
