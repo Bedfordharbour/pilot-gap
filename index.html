@@ -125,9 +125,11 @@ code{font-size:14px;word-break:break-all}
 
     <label class="check"><input id="practice" type="checkbox"> <span>Practice mode: three pretend vehicles, no GPS or other phones needed. Use this to try the screen at home.</span></label>
 
+    <label class="check"><input id="keepOn" type="checkbox"> <span>Keep screen on. Uses more battery, so leave it off if the phone's own auto-lock is set to Never.</span></label>
+
     <p id="setupErr" class="err" hidden></p>
     <button id="start" class="primary" type="button">Start</button>
-    <p class="note">Keep the phone mounted, plugged in and on this page. The screen is kept awake while the page is open. If the screen locks, updates stop.</p>
+    <p class="note">Keep the phone mounted, plugged in and on this page. If the screen locks, updates stop.</p>
   </div>
 </section>
 
@@ -138,6 +140,7 @@ code{font-size:14px;word-break:break-all}
       <div class="status">
         <span><span class="dot" id="netDot"></span><span id="netTxt">Relay</span></span>
         <span><span class="dot" id="gpsDot"></span><span id="gpsTxt">GPS</span></span>
+        <span id="scrWrap" hidden><span class="dot" id="scrDot"></span><span id="scrTxt">Screen</span></span>
       </div>
     </div>
 
@@ -182,7 +185,9 @@ code{font-size:14px;word-break:break-all}
           <span>m</span>
         </div>
       </div>
+      <label class="check"><input id="keepOn2" type="checkbox"> <span>Keep screen on (uses more battery)</span></label>
       <button id="changeRole" type="button">Change role</button>
+      <video id="nosleep" muted playsinline loop hidden src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMrbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAAAAABAAAAAAHNbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAgABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABeG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAThzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAK/+EAFmdCwArZHsBEAAADAAQAAAMACDxImSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAApAAAAKQAAAABhzdHRzAAAAAAAAAAEAAAACAABAAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAACAAAAAQAAABxzdHN6AAAAAAAAAAAAAAACAAAChgAAAAoAAAAUc3RjbwAAAAAAAAABAAADWwAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNjAuMTYuMTAwAAAACGZyZWUAAAKYbWRhdAAAAnAGBf//bNxF6b3m2Ui3lizYINkj7u94MjY0IC0gY29yZSAxNjQgcjMxMDggMzFlMTlmOSAtIEguMjY0L01QRUctNCBBVkMgY29kZWMgLSBDb3B5bGVmdCAyMDAzLTIwMjMgLSBodHRwOi8vd3d3LnZpZGVvbGFuLm9yZy94MjY0Lmh0bWwgLSBvcHRpb25zOiBjYWJhYz0wIHJlZj0zIGRlYmxvY2s9MTowOjAgYW5hbHlzZT0weDE6MHgxMTEgbWU9aGV4IHN1Ym1lPTcgcHN5PTEgcHN5X3JkPTEuMDA6MC4wMCBtaXhlZF9yZWY9MSBtZV9yYW5nZT0xNiBjaHJvbWFfbWU9MSB0cmVsbGlzPTEgOHg4ZGN0PTAgY3FtPTAgZGVhZHpvbmU9MjEsMTEgZmFzdF9wc2tpcD0xIGNocm9tYV9xcF9vZmZzZXQ9LTIgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAOZYiEBb///w9FAAFPf4AAAAAGQZo4CvqA"></video>
     </div>
   </div>
 </section>
@@ -213,7 +218,7 @@ var S = {
   practice:false, peers:{}, client:null, connected:false,
   watchId:null, lastFix:null, prevFix:null, lastPub:0,
   audio:null, mutedUntil:0, lastBeep:0, lastSpeak:{}, wasStale:{},
-  wake:null, orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
+  wake:null, keepOn: store.get("keepOn","0")==="1", wakeMode:"off", orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
   simT0:0, timers:[]
 };
 
@@ -430,6 +435,14 @@ function render(){
   var gpsOk = S.practice || (f && now-f.time<15000);
   $("gpsDot").className="dot "+(gpsOk?"on":"off");
   $("gpsTxt").textContent = S.practice ? "Pretend GPS" : f ? ("GPS ±"+Math.round(f.acc)+" m") : "GPS…";
+  $("scrWrap").hidden=!S.keepOn;
+  if(S.keepOn){
+    if(S.wakeMode==="lock" && !(S.wake && !S.wake.released)) S.wakeMode="off";
+    if(S.wakeMode!=="lock" && S.wakeMode!=="video") wakeLock();
+    var held = S.wakeMode==="lock" || (S.wakeMode==="video" && !$("nosleep").paused);
+    $("scrDot").className="dot "+(held?"on":"off");
+    $("scrTxt").textContent = held ? "Screen on" : "Screen may lock";
+  }
   /* banners */
   var b=[];
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
@@ -472,8 +485,40 @@ function readRange(minId,maxId){
   if(!(mn>=0)||!(mx>0)||mx<=mn) return false;
   S.minGap=mn; S.maxGap=mx; store.set("min",mn); store.set("max",mx); return true;
 }
+function videoOn(){
+  var v=$("nosleep");
+  try{ var pr=v.play(); S.wakeMode="video";
+    if(pr&&pr.catch) pr.catch(function(){ S.wakeMode="failed"; }); }catch(e){ S.wakeMode="failed"; }
+}
 function wakeLock(){
-  try{ if("wakeLock" in navigator && document.visibilityState==="visible"){ navigator.wakeLock.request("screen").then(function(l){ S.wake=l; }).catch(function(){}); } }catch(e){}
+  if(!S.keepOn || $("run").hidden || document.visibilityState!=="visible") return;
+  if(S.wake && !S.wake.released) return;
+  if(S.wakePending || Date.now()-(S.wakeTried||0)<10000) return;
+  S.wakeTried=Date.now();
+  if("wakeLock" in navigator){
+    try{
+      S.wakePending=true;
+      navigator.wakeLock.request("screen").then(function(l){
+        S.wakePending=false;
+        S.wake=l; S.wakeMode="lock";
+        try{ var v=$("nosleep"); if(!v.paused) v.pause(); }catch(e){}
+        l.addEventListener("release",function(){ S.wake=null; if(S.keepOn) setTimeout(wakeLock,1000); });
+      }).catch(function(){ S.wakePending=false; videoOn(); });
+      return;
+    }catch(e){}
+  }
+  videoOn();
+}
+function wakeOff(){
+  try{ if(S.wake){ var w=S.wake; S.wake=null; w.release(); } }catch(e){}
+  try{ $("nosleep").pause(); }catch(e){}
+  S.wakeMode="off";
+}
+function setKeepOn(on){
+  S.wakeTried=0; S.keepOn=on; store.set("keepOn",on?"1":"0");
+  $("keepOn").checked=on; $("keepOn2").checked=on;
+  if(on) wakeLock(); else wakeOff();
+  render();
 }
 function start(){
   var err=$("setupErr"); err.hidden=true;
@@ -484,7 +529,8 @@ function start(){
   S.trip=code||"PRACTICE"; S.practice=$("practice").checked;
   store.set("role",S.role); store.set("trip",S.trip);
   try{ history.replaceState(null,"",shareUrl()); }catch(e){}
-  initAudio(); beep(880,0.08,0); wakeLock();
+  initAudio(); beep(880,0.08,0);
+  S.keepOn=$("keepOn").checked; store.set("keepOn",S.keepOn?"1":"0"); $("keepOn2").checked=S.keepOn;
   S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0;
   if(S.practice){ S.simT0=Date.now(); }
   else { startGps(); connectRelay(); }
@@ -494,6 +540,7 @@ function start(){
   $("shareLink").textContent=shareUrl();
   $("minGap2").value=S.minGap; $("maxGap2").value=S.maxGap;
   $("setup").hidden=true; $("run").hidden=false; $("settings").hidden=true;
+  S.wakeTried=0; wakeLock();
   render();
 }
 function teardown(clearMine){
@@ -505,7 +552,7 @@ function teardown(clearMine){
     setTimeout(function(){ try{ c.end(true); }catch(e){} },300);
   }
   S.connected=false; S.lastFix=null;
-  try{ if(S.wake){ S.wake.release(); S.wake=null; } }catch(e){}
+  wakeOff();
 }
 function goSetup(){ teardown(false); $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); }
 
@@ -517,6 +564,7 @@ $("mute").addEventListener("click",function(){ S.mutedUntil=Date.now()+60000; tr
 $("toggleSettings").addEventListener("click",function(){ $("settings").hidden=!$("settings").hidden; });
 $("stop").addEventListener("click",function(){ teardown(true); $("run").hidden=true; $("setup").hidden=false; });
 $("changeRole").addEventListener("click",goSetup);
+$("keepOn2").addEventListener("change",function(){ setKeepOn($("keepOn2").checked); });
 ["minGap2","maxGap2"].forEach(function(id){ $(id).addEventListener("change",function(){ if(readRange("minGap2","maxGap2")) render(); }); });
 $("copyLink").addEventListener("click",function(){
   var u=shareUrl();
@@ -524,11 +572,12 @@ $("copyLink").addEventListener("click",function(){
   try{ navigator.clipboard.writeText(u).then(done,function(){ selectLink(); }); }catch(e){ selectLink(); }
 });
 function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($("shareLink")); var s=getSelection(); s.removeAllRanges(); s.addRange(r); $("copied").textContent="Selected, copy it now"; }catch(e){} }
-document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible" && !$("run").hidden) wakeLock(); });
+document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible" && !$("run").hidden){ S.wakeTried=0; wakeLock(); } });
 
 var q=new URLSearchParams(location.search);
 $("trip").value=(q.get("trip")||"1234").toUpperCase();
 $("minGap").value=S.minGap; $("maxGap").value=S.maxGap;
+$("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn;
 if(S.role) pickRole(S.role);
 
 window.__pg={gapInfo:gapInfo,dist:dist,S:S};
