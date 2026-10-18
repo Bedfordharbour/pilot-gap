@@ -354,13 +354,14 @@ function b64(bytes){ var s=""; for(var i=0;i<bytes.length;i++) s+=String.fromCha
 function unb64(t){ var s=atob(t), a=new Uint8Array(s.length); for(var i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
 function cryptoOk(){ return !!(window.crypto && crypto.subtle && window.isSecureContext!==false); }
 function deriveTrip(code){
+  var tid="";
   return crypto.subtle.digest("SHA-256",enc.encode("bhe-pilotgap topic|"+code)).then(function(h){
-    S.topicId=hex(h).slice(0,24);
+    tid=hex(h).slice(0,24);
     return crypto.subtle.importKey("raw",enc.encode(code),"PBKDF2",false,["deriveKey"]);
   }).then(function(base){
     return crypto.subtle.deriveKey({name:"PBKDF2",salt:enc.encode("bhe-pilotgap v2"),iterations:150000,hash:"SHA-256"},
       base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
-  }).then(function(k){ S.key=k; });
+  }).then(function(k){ if(code===S.trip){ S.topicId=tid; S.key=k; } });   // a late result for an earlier trip code is dropped
 }
 function seal(obj){
   var iv=crypto.getRandomValues(new Uint8Array(12));
@@ -395,13 +396,13 @@ function refreshUpLine(){
   f.textContent = !UPLOAD_URL ? "Automatic log upload is not set up yet." : practice ? "Practice trips are not sent." :
     pend ? "Waiting to send to the office." : ok ? "Sent to the office at "+hhmm(ok)+"." : "";
 }
-function postLog(name,text){
+function postLog(name,text,kind){
   var ac = window.AbortController ? new AbortController() : null;
-  S.uploadAbort=ac; S.uploadStart=Date.now();
+  S.aborts=S.aborts||{}; var slot={ac:ac,t:Date.now()}; S.aborts[kind]=slot;   // checked from periodic(), since page timers freeze in the app's background
   var tm = ac ? setTimeout(function(){ try{ ac.abort(); }catch(e){} },UPLOAD_TIMEOUT_MS) : 0;
   return fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:UPLOAD_KEY,name:name,text:text}),signal:ac?ac.signal:undefined})
     .then(function(r){ return r.json(); })
-    .then(function(j){ clearTimeout(tm); if(S.uploadAbort===ac) S.uploadAbort=null; return j; }, function(e){ clearTimeout(tm); if(S.uploadAbort===ac) S.uploadAbort=null; throw e; });
+    .then(function(j){ clearTimeout(tm); if(S.aborts[kind]===slot) delete S.aborts[kind]; return j; }, function(e){ clearTimeout(tm); if(S.aborts[kind]===slot) delete S.aborts[kind]; throw e; });
 }
 // Older trip logs that had not reached the office when a new log started (kept, not overwritten).
 function unsent(){ try{ var u=JSON.parse(store.get("unsent","[]")); return Array.isArray(u)?u:[]; }catch(e){ return []; } }
@@ -414,7 +415,7 @@ function sendUnsent(){
   if(S.uploading) return;   // one upload at a time
   var u=unsent(); if(!u.length || S.sendingOld || !UPLOAD_URL || navigator.onLine===false) return;
   S.sendingOld=true; var x=u[0];
-  postLog(x.name,x.text).then(function(j){
+  postLog(x.name,x.text,"old").then(function(j){
     S.sendingOld=false;
     var r=unsent().filter(function(y){ return y.name!==x.name; });
     if(j && j.ok){ store.set("unsent",JSON.stringify(r)); L("upload","older log sent: "+x.name); sendUnsent(); }
@@ -430,7 +431,7 @@ function uploadLog(reason){
   if(navigator.onLine===false){ store.set("uppending","1"); setUpStatus("Log waiting to send (no signal)."); return; }
   S.uploading=true; S.uploadAgain="";
   var n=log.length;
-  postLog(name,logText(log))
+  postLog(name,logText(log),"trip")
     .then(function(j){
       S.uploading=false;
       if(j && j.ok){ if(!S.uploadAgain && $("run").hidden) store.set("uppending","");   /* during a trip more lines keep coming, so it stays pending */ store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
@@ -612,19 +613,19 @@ function periodic(now){
     try{ old.removeAllListeners(); old.on("error",function(){}); old.end(true); }catch(e){}
     connectRelay();
   }
-  if(S.uploading && S.uploadAbort && now-S.uploadStart>UPLOAD_TIMEOUT_MS){ try{ S.uploadAbort.abort(); }catch(e){} S.uploadAbort=null; }   // page timers may be frozen: abort here too
+  Object.keys(S.aborts||{}).forEach(function(k){ var a=S.aborts[k]; if(a && a.ac && now-a.t>UPLOAD_TIMEOUT_MS){ try{ a.ac.abort(); }catch(e){} delete S.aborts[k]; } });   // page timers may be frozen: abort a hung upload here too
 }
 function cfgText(c){ return "front "+fmtRange(c.ranges.front)+(c.trucks===2?", between trucks "+fmtRange(c.ranges.mid):"")+", rear "+fmtRange(c.ranges.rear)+", "+c.trucks+" truck"+(c.trucks===2?"s":""); }
 
 /* ---------- GPS ---------- */
 function onFix(p){
   var c=p.coords, now=Date.now();
-  var fix={lat:c.latitude, lon:c.longitude, acc:c.accuracy, time:now,
+  var fix={lat:c.latitude, lon:c.longitude, acc:c.accuracy, time:now, net:!!p.net,
     spd:(c.speed!=null&&isFinite(c.speed))?c.speed:null, hdg:(c.heading!=null&&isFinite(c.heading))?c.heading:null};
   var prev=S.lastFix;
   if(prev){
     var d=dist(prev,fix), dt=(now-prev.time)/1000;
-    var rough = fix.acc>100 || prev.acc>100;   // e.g. a mobile-network position: jumps would give a false speed
+    var rough = fix.net || prev.net || fix.acc>100 || prev.acc>100;   // e.g. a mobile-network position: jumps would give a false speed
     if(fix.spd==null && dt>0.5 && !rough) fix.spd=d/dt;
     if(fix.hdg==null) fix.hdg = (d>5 && !rough) ? bearing(prev,fix) : prev.hdg;
   }
@@ -645,9 +646,9 @@ function startGps(){
 }
 
 /* ---------- Android app hooks (called by the app; absent in a browser) ---------- */
-window.__pgNativeFix=function(lat,lon,acc,spd,hdg){
+window.__pgNativeFix=function(lat,lon,acc,spd,hdg,net){   // net: true for a mobile-network position (app 1.0.1+)
   if($("run").hidden || S.practice) return;
-  onFix({coords:{latitude:lat,longitude:lon,accuracy:acc,speed:spd,heading:hdg}});
+  onFix({coords:{latitude:lat,longitude:lon,accuracy:acc,speed:spd,heading:hdg},net:!!net});
 };
 window.__pgNativeTick=function(){ if(!$("run").hidden && document.visibilityState!=="visible") render(); };  // keeps gaps and alarms going behind other apps
 window.__pgNativeEvent=function(what){
@@ -970,7 +971,8 @@ function start(){
   if(S.practice){ S.simT0=Date.now(); }
   else {
     startGps();
-    deriveTrip(S.trip).then(function(){ if(!$("run").hidden) connectRelay(); })
+    var startN = S.startN = (S.startN||0)+1;   // a quick End/Start must not leave the first start's connection running
+    deriveTrip(S.trip).then(function(){ if(!$("run").hidden && startN===S.startN && !S.client) connectRelay(); })
       .catch(function(e){ S.cryptoErr="Could not set up scrambling: "+((e&&e.message)||e); L("error",S.cryptoErr); });
   }
   S.timers.push(setInterval(render,1000));

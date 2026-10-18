@@ -54,6 +54,17 @@ Round 1's network-position fix could feed in a position kilometres out, with a f
 
 Left for Ryan: when Android kills the page engine mid-trip, the trip stops with only a notification. Restarting the trip automatically, or speaking a warning, is a design choice.
 
+### Audit round 3 (no serious faults; 3 minor fixed)
+
+- The older-log upload had no abort from the app tick: both uploads are now checked.
+- A 60 m network position after a 5 m GPS fix could still give a false speed. The app now marks network positions, and the page works out no speed or heading from them.
+- A quick End trip and Start again could leave the first start's relay connection running. Now only the latest start connects, and a late key for an old trip code is dropped.
+- **Field check, not a confirmed fault:** the relay library uses page timers inside. With a phone in the background for 5+ min in a two-phone test, check in the log that the other phones' "ages" stay under 15 s and "starting a new connection" lines do not repeat.
+
+### Released 1.5.1 / app 1.0.1 (19 Oct, early morning)
+
+79 smoke checks pass. App signed with the Pilot Gap key (certificate `5b2fdb16…74e8`), lint clean. **Not yet tested on a real phone.**
+
 ## 2026-10-18
 
 ### Decisions

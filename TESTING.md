@@ -48,6 +48,8 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Mid-trip with the app behind Maps for 10+ minutes: the file in Google Drive updates without opening the app.
 - [ ] Indoors or under cover: the vehicle keeps showing on the other phones (network position) instead of going grey.
 - [ ] Change font size in the phone's settings mid-trip: the trip carries on.
+- [ ] Open the app in airplane mode (after it has opened once with signal): the saved page shows, not "no saved copy".
+- [ ] Two phones, one app phone behind Maps for 5+ minutes: in the log, the other phones' ages stay under 15 s and "starting a new connection" does not repeat.
 
 ## Update check
 
@@ -63,6 +65,7 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 
 - Android app: running the page behind other apps is unverified on a real phone until the checklist above is done. Some phone makers (for example Samsung, Xiaomi) close background apps harder; the battery "not optimised" setting is needed.
 
+- Phones on 1.5.0 or older default to code 123456, newer ones to 234567. Update every phone, or type the same code.
 - Phones on 1.0 or 1.1 cannot see phones on 1.2 (different relay channel). Every phone must show version 1.2.0 or later.
 - The default code 234567 is not private; anyone with the page and that code can see the trip.
 

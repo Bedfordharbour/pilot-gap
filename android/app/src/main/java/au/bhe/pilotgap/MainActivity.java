@@ -188,10 +188,11 @@ public class MainActivity extends Activity {
     // ---- called by TripService (main thread) ----
     void deliverFix(Location l) {
         String js = String.format(Locale.US,
-            "window.__pgNativeFix&&window.__pgNativeFix(%.7f,%.7f,%.1f,%s,%s)",
+            "window.__pgNativeFix&&window.__pgNativeFix(%.7f,%.7f,%.1f,%s,%s,%s)",
             l.getLatitude(), l.getLongitude(), l.hasAccuracy() ? l.getAccuracy() : 999f,
             l.hasSpeed() ? String.format(Locale.US, "%.2f", l.getSpeed()) : "null",
-            l.hasBearing() ? String.format(Locale.US, "%.1f", l.getBearing()) : "null");
+            l.hasBearing() ? String.format(Locale.US, "%.1f", l.getBearing()) : "null",
+            android.location.LocationManager.GPS_PROVIDER.equals(l.getProvider()) ? "false" : "true");   // true = network position: page works out no speed from it
         if (web != null) web.evaluateJavascript(js, null);
     }
 

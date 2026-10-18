@@ -231,6 +231,8 @@ await a.waitForTimeout(800);
 check('app: log stays marked unsent during a trip after a 10-minute upload', await a.evaluate(() => localStorage.getItem('pg_uppending') === '1'));
 await a.evaluate(() => window.__pgNativeFix(-33.8615 + 0.02, 121.8912, 1500, null, null)); await a.waitForTimeout(200);
 check('app: no speed worked out from a rough (network) position', await a.evaluate(() => window.__pg.S.lastFix.spd == null), await a.evaluate(() => window.__pg.S.lastFix.spd));
+await a.evaluate(() => window.__pgNativeFix(-33.8615, 121.8912, 5, null, null)); await a.evaluate(() => window.__pgNativeFix(-33.8615 + 0.0004, 121.8912, 60, null, null, true)); await a.waitForTimeout(200);
+check('app: no speed worked out from a network position (app marks it)', await a.evaluate(() => window.__pg.S.lastFix.spd == null && window.__pg.S.lastFix.net === true), await a.evaluate(() => window.__pg.S.lastFix));
 check('app: 10-minute upload runs from the tick, not a page timer', uploads.length === upBefore + 1 && /-truck-AppDriver-/.test(uploads[uploads.length - 1].name), uploads.length - upBefore);
 await a.click('#stop'); await a.waitForTimeout(800);
 const calls3 = await a.evaluate(() => window.__calls.map(c => c[0]));
