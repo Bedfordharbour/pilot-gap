@@ -2,6 +2,16 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.1.0 — 18 Oct 2026
+
+- Second truck: new role **Truck 2**. With two trucks there are three gaps: front (lead pilot to Truck 1), between trucks (Truck 1 to Truck 2), and rear (last truck to rear pilot).
+- Separate range for each gap. Defaults: front 500–2000 m, between trucks 0–100 m, rear 100–1000 m.
+- **Truck 1 sets the gaps and the number of trucks for the whole trip.** The other phones pick them up through the relay and show "Set by Truck 1 at hh:mm". Pilots can see the gaps but not change them.
+- Each phone shows its own gaps large and the others small; speeds for all vehicles.
+- Voice alerts now say "Front gap", "Truck gap" or "Rear gap".
+- The role check also expects Truck 2 to be behind Truck 1.
+- Smoke test extended to 29 checks, covering one-truck and two-truck layouts and settings passed from Truck 1.
+
 ## 1.0.0 — 18 Oct 2026
 
 First version for the field trial on 19 Oct 2026. Built up through these commits:

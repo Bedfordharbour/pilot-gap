@@ -36,7 +36,7 @@ h1{font:700 34px/1 var(--display);letter-spacing:.02em;margin:8px 0 0;text-trans
 h1 span{background:var(--accent);color:var(--on-accent);padding:0 6px}
 .lede{color:var(--muted);margin:0}
 .label{font:600 12px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.roles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.roles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .role{appearance:none;border:2px solid var(--line);background:var(--panel);color:var(--fg);border-radius:10px;
   padding:14px 6px;font:700 20px/1.1 var(--display);text-transform:uppercase;cursor:pointer}
 .role small{display:block;font:400 12px/1.3 var(--body);text-transform:none;color:var(--muted);margin-top:4px}
@@ -82,6 +82,14 @@ button:focus-visible,.role:focus-visible,input:focus-visible{outline:3px solid v
 .vehicle{display:flex;align-items:center;justify-content:center;gap:10px;font:700 30px/1 var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--fg)}
 .vehicle svg{width:52px;height:auto;flex:none}
 .speeds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-variant-numeric:tabular-nums}
+.speeds.four{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.speeds.four b{font-size:18px}
+.vehicle.mini{font-size:22px} .vehicle.mini svg{width:40px}
+.ranges{display:flex;flex-direction:column;gap:10px}
+.rrow{display:grid;grid-template-columns:7.5em minmax(0,1fr) auto minmax(0,1fr) auto;gap:6px;align-items:center}
+.rrow span:first-child{font-weight:600}
+.rrow input{font-size:18px;padding:8px 10px}
+.rview{font-weight:600}
 .speeds div{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:6px 8px}
 .speeds b{display:block;font:700 22px/1.1 var(--display)}
 .speeds span{font-size:12px;color:var(--muted)}
@@ -97,36 +105,38 @@ code{font-size:14px;word-break:break-all}
 <section id="setup">
   <div class="wrap">
     <h1><span>Pilot</span> Gap</h1>
-    <p class="lede">Live gaps between the lead pilot, the oversize vehicle and the rear pilot.</p>
+    <p class="lede">Live gaps between the lead pilot, the truck or trucks, and the rear pilot.</p>
 
     <div class="field">
       <span class="label">This phone is in the</span>
       <div class="roles" role="group" aria-label="Choose role">
         <button class="role" type="button" data-role="lead" aria-pressed="false">Lead<small>pilot, in front</small></button>
-        <button class="role" type="button" data-role="truck" aria-pressed="false">Truck<small>oversize vehicle</small></button>
+        <button class="role" type="button" data-role="truck" aria-pressed="false">Truck 1<small>front truck, sets the gaps</small></button>
+        <button class="role" type="button" data-role="truck2" aria-pressed="false">Truck 2<small>second truck, if any</small></button>
         <button class="role" type="button" data-role="rear" aria-pressed="false">Rear<small>pilot, behind</small></button>
       </div>
     </div>
 
     <div class="field">
-      <label class="label" for="trip">Trip code (same on all three phones)</label>
+      <label class="label" for="trip">Trip code (same on every phone)</label>
       <div class="row">
         <input id="trip" type="text" maxlength="12" autocomplete="off" spellcheck="false">
         <button id="newTrip" type="button">New code</button>
       </div>
     </div>
 
-    <div class="field">
-      <span class="label">Required gap</span>
-      <div class="row">
-        <input id="minGap" type="number" inputmode="numeric" min="0" step="50" aria-label="Minimum gap in metres">
-        <span>to</span>
-        <input id="maxGap" type="number" inputmode="numeric" min="0" step="50" aria-label="Maximum gap in metres">
-        <span>m</span>
+    <div class="field" id="setupRanges">
+      <span class="label">Required gaps for this trip</span>
+      <div class="ranges">
+        <div class="rrow"><span>Front</span><input id="s_fmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap minimum in metres"><span>to</span><input id="s_fmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap maximum in metres"><span>m</span></div>
+        <label class="check"><input id="s_two" type="checkbox"> <span>Second truck on this trip</span></label>
+        <div class="rrow" id="s_midRow"><span>Between trucks</span><input id="s_mmin" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks minimum in metres"><span>to</span><input id="s_mmax" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks maximum in metres"><span>m</span></div>
+        <div class="rrow"><span>Rear</span><input id="s_rmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap minimum in metres"><span>to</span><input id="s_rmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap maximum in metres"><span>m</span></div>
       </div>
     </div>
+    <p class="note" id="setupRangeNote">Truck 1 sets the gaps for the trip. This phone uses them as soon as Truck 1 connects.</p>
 
-    <label class="check"><input id="practice" type="checkbox"> <span>Practice mode: three pretend vehicles, no GPS or other phones needed. Use this to try the screen at home.</span></label>
+    <label class="check"><input id="practice" type="checkbox"> <span>Practice mode: pretend vehicles, no GPS or other phones needed. Use this to try the screen at home.</span></label>
 
     <label class="check"><input id="keepOn" type="checkbox"> <span>Keep screen on. Asks the phone to stay awake. Uses a little more battery. Not needed if the phone's own auto-lock is set to Never.</span></label>
     <label class="check"><input id="forceOn" type="checkbox"> <span>Force screen on. Plays a blank video on a loop to stop the phone locking. Uses more battery. Only use it if the screen still locks with the first option.</span></label>
@@ -151,23 +161,9 @@ code{font-size:14px;word-break:break-all}
 
     <div id="banners"></div>
 
-    <div class="gap none" id="gapA">
-      <div class="who"><span id="gapAWho">Lead pilot ahead</span><span id="gapARange"></span></div>
-      <div class="num" id="gapANum">–</div>
-      <div class="sub" id="gapASub">Waiting for both vehicles</div>
-    </div>
-    <div class="vehicle" id="truckMark"><svg viewBox="0 0 64 36" aria-hidden="true"><path fill="currentColor" d="M2 4h36v22H2z"/><path fill="currentColor" d="M40 10h12l8 9v7H40z"/><path fill="var(--bg)" d="M44 13h7l5 6H44z"/><circle cx="12" cy="29" r="5" fill="currentColor"/><circle cx="12" cy="29" r="2" fill="var(--bg)"/><circle cx="50" cy="29" r="5" fill="currentColor"/><circle cx="50" cy="29" r="2" fill="var(--bg)"/><path fill="var(--accent)" d="M6 8h28v4H6z"/></svg><span>Truck</span></div>
-    <div class="gap none" id="gapB">
-      <div class="who"><span id="gapBWho">Rear pilot behind</span><span id="gapBRange"></span></div>
-      <div class="num" id="gapBNum">–</div>
-      <div class="sub" id="gapBSub">Waiting for both vehicles</div>
-    </div>
+    <div id="gaps"></div>
 
-    <div class="speeds" aria-label="Speeds">
-      <div><span>Lead</span><b id="spdLead">–</b></div>
-      <div><span>Truck</span><b id="spdTruck">–</b></div>
-      <div><span>Rear</span><b id="spdRear">–</b></div>
-    </div>
+    <div class="speeds" id="speeds" aria-label="Speeds"></div>
 
     <div class="actions">
       <button id="mute" type="button" aria-pressed="false">Mute 5 min</button>
@@ -182,13 +178,15 @@ code{font-size:14px;word-break:break-all}
         <div class="row"><button id="copyLink" type="button">Copy link</button><span id="copied" class="note"></span></div>
       </div>
       <div class="field">
-        <span class="label">Required gap (this phone)</span>
-        <div class="row">
-          <input id="minGap2" type="number" inputmode="numeric" min="0" step="50" aria-label="Minimum gap in metres">
-          <span>to</span>
-          <input id="maxGap2" type="number" inputmode="numeric" min="0" step="50" aria-label="Maximum gap in metres">
-          <span>m</span>
-        </div>
+        <span class="label">Required gaps for this trip</span>
+        <div id="liveEdit"><div class="ranges">
+        <div class="rrow"><span>Front</span><input id="l_fmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap minimum in metres"><span>to</span><input id="l_fmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap maximum in metres"><span>m</span></div>
+        <label class="check"><input id="l_two" type="checkbox"> <span>Second truck on this trip</span></label>
+        <div class="rrow" id="l_midRow"><span>Between trucks</span><input id="l_mmin" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks minimum in metres"><span>to</span><input id="l_mmax" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks maximum in metres"><span>m</span></div>
+        <div class="rrow"><span>Rear</span><input id="l_rmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap minimum in metres"><span>to</span><input id="l_rmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap maximum in metres"><span>m</span></div>
+      </div></div>
+        <div id="liveView" class="rview"></div>
+        <span class="note" id="liveSrc"></span>
       </div>
       <label class="check"><input id="keepOn2" type="checkbox"> <span>Keep screen on (a little more battery)</span></label>
       <label class="check"><input id="forceOn2" type="checkbox"> <span>Force screen on, blank video (more battery)</span></label>
@@ -206,29 +204,58 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.0.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.1.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v1/";
 var STALE_MS = 15000;      // no update for 15 s = lost contact
 var ESTIMATE_MS = 120000;  // stop estimating 2 min after contact lost
-var ROLE_NAMES = {lead:"Lead pilot", truck:"Truck", rear:"Rear pilot"};
-var ROLES = ["lead","truck","rear"];
+var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
+var NAME  = {lead:"Lead pilot", truck:"Truck 1", truck2:"Truck 2", rear:"Rear pilot"};
+var SHORT = {lead:"Lead", truck:"Truck 1", truck2:"Truck 2", rear:"Rear"};
+var GAPNAME = {front:"Front gap", mid:"Truck gap", rear:"Rear gap"};
+var DEFAULT_CFG = {trucks:1, ranges:{front:{min:500,max:2000}, mid:{min:0,max:100}, rear:{min:100,max:1000}}};
+var TRUCK_SVG = '<svg viewBox="0 0 64 36" aria-hidden="true"><path fill="currentColor" d="M2 4h36v22H2z"/><path fill="currentColor" d="M40 10h12l8 9v7H40z"/><path fill="var(--bg)" d="M44 13h7l5 6H44z"/><circle cx="12" cy="29" r="5" fill="currentColor"/><circle cx="12" cy="29" r="2" fill="var(--bg)"/><circle cx="50" cy="29" r="5" fill="currentColor"/><circle cx="50" cy="29" r="2" fill="var(--bg)"/><path fill="var(--accent)" d="M6 8h28v4H6z"/></svg>';
 
 var $ = function(id){ return document.getElementById(id); };
 var store = {
   get:function(k,d){ try{ var v = localStorage.getItem("pg_"+k); return v===null?d:v; }catch(e){ return d; } },
   set:function(k,v){ try{ localStorage.setItem("pg_"+k,String(v)); }catch(e){} }
 };
+function clone(o){ return JSON.parse(JSON.stringify(o)); }
+function validRange(r){ return r && typeof r.min==="number" && typeof r.max==="number" && r.min>=0 && r.max>r.min && r.max<100000; }
+function validCfg(c){ return c && (c.trucks===1||c.trucks===2) && c.ranges && validRange(c.ranges.front) && validRange(c.ranges.mid) && validRange(c.ranges.rear); }
+function loadMyCfg(){ try{ var c=JSON.parse(store.get("cfg","null")); if(validCfg(c)) return {trucks:c.trucks,ranges:c.ranges}; }catch(e){} return clone(DEFAULT_CFG); }
 
 var myId = Math.random().toString(36).slice(2,10);
 var S = {
-  role: store.get("role",""), trip:"", minGap:+store.get("min",500), maxGap:+store.get("max",2000),
+  role: store.get("role",""), trip:"",
+  myCfg: loadMyCfg(),               // what this phone sets when it is Truck 1
+  cfg: clone(DEFAULT_CFG), cfgFrom:"default", cfgT:0,
   practice:false, peers:{}, client:null, connected:false,
-  watchId:null, lastFix:null, prevFix:null, lastPub:0,
+  watchId:null, lastFix:null, lastPub:0,
   audio:null, mutedUntil:0, lastBeep:0, lastSpeak:{}, wasStale:{},
-  wake:null, keepOn: store.get("keepOn","0")==="1", force: store.get("forceOn","0")==="1", orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
-  simT0:0, timers:[]
+  wake:null, keepOn: store.get("keepOn","0")==="1", force: store.get("forceOn","0")==="1",
+  orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
+  simT0:0, timers:[], layoutKey:""
 };
+if(ROLES.indexOf(S.role)<0) S.role="";
+
+/* ---------- trip shape ---------- */
+function twoTrucks(){ return S.cfg.trucks===2 || S.role==="truck2" || !!S.peers.truck2; }
+function nm(r){ return (r==="truck" && !twoTrucks()) ? "Truck" : NAME[r]; }
+function chain(){ return twoTrucks() ? ["lead","truck","truck2","rear"] : ["lead","truck","rear"]; }
+function gapList(){
+  var g=[{key:"front",a:"lead",b:"truck"}];
+  if(twoTrucks()) g.push({key:"mid",a:"truck",b:"truck2"});
+  g.push({key:"rear",a:twoTrucks()?"truck2":"truck",b:"rear"});
+  return g;
+}
+function gapLabel(g){
+  var me=S.role, a=nm(g.a), b=nm(g.b);
+  if(me===g.a) return b+" behind you";
+  if(me===g.b) return a+" ahead of you";
+  return a+" to "+b.charAt(0).toLowerCase()+b.slice(1);
+}
 
 /* ---------- maths ---------- */
 function rad(d){ return d*Math.PI/180; }
@@ -249,20 +276,22 @@ function fmtM(m){
 }
 function fmtMplain(m){ return m>=10000 ? (m/1000).toFixed(1)+" km" : Math.round(m).toLocaleString("en-AU")+" m"; }
 function fmtAge(ms){ var s=Math.round(ms/1000); return s<90 ? s+" s" : Math.round(s/60)+" min"; }
+function fmtRange(r){ return r.min+"–"+r.max+" m"; }
 function kmh(v){ return (v==null||!isFinite(v)) ? "–" : Math.round(v*3.6)+" km/h"; }
+function hhmm(t){ var d=new Date(t); return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2); }
 
-/* gap between the vehicle ahead and the vehicle behind */
-function gapInfo(aheadRole, behindRole, now){
-  var a=S.peers[aheadRole], b=S.peers[behindRole];
-  if(!a||!b) return {state:"none", missing: !a ? aheadRole : behindRole};
+/* gap between the vehicle ahead (a) and the vehicle behind (b) */
+function gapInfo(aRole, bRole, range, now){
+  var a=S.peers[aRole], b=S.peers[bRole];
+  if(!a||!b) return {state:"none", missing: !a ? aRole : bRole};
   var ageA=Math.max(0,now-a.t), ageB=Math.max(0,now-b.t);
   var staleA=ageA>STALE_MS, staleB=ageB>STALE_MS;
   var raw=dist(a,b);
   if(!staleA&&!staleB){
-    var st = raw<S.minGap ? "close" : raw>S.maxGap ? "far" : "ok";
+    var st = raw<range.min ? "close" : raw>range.max ? "far" : "ok";
     return {state:st, value:raw};
   }
-  var who = staleA&&staleB ? (ageA>ageB?aheadRole:behindRole) : (staleA?aheadRole:behindRole);
+  var who = staleA&&staleB ? (ageA>ageB?aRole:bRole) : (staleA?aRole:bRole);
   var age = Math.max(staleA?ageA:0, staleB?ageB:0);
   var est = null;
   if(age<=ESTIMATE_MS){
@@ -279,25 +308,31 @@ function connectRelay(){
   if(typeof mqtt==="undefined"){ S.netErr="Relay library did not load"; return; }
   var c = mqtt.connect(RELAY,{clientId:"pg_"+myId, keepalive:30, reconnectPeriod:3000, connectTimeout:10000, clean:true});
   S.client=c;
-  c.on("connect",function(){ S.connected=true; c.subscribe(TOPIC_BASE+S.trip+"/+",{qos:0}); });
+  c.on("connect",function(){ S.connected=true; c.subscribe(TOPIC_BASE+S.trip+"/+",{qos:0}); publishCfg(); publishMine(true); });
   c.on("close",function(){ S.connected=false; });
   c.on("offline",function(){ S.connected=false; });
   c.on("error",function(){ S.connected=false; });
-  c.on("message",function(t,payload){
-    var role=t.split("/").pop();
-    if(ROLES.indexOf(role)<0) return;
-    var txt=payload.toString();
-    if(!txt){ if(role!==S.role) delete S.peers[role]; return; }
-    var d; try{ d=JSON.parse(txt); }catch(e){ return; }
-    if(typeof d.lat!=="number"||typeof d.lon!=="number"||typeof d.t!=="number") return;
-    if(Math.abs(d.lat)>90||Math.abs(d.lon)>180) return;
-    if(role===S.role){
-      if(d.id!==myId && Date.now()-d.t<STALE_MS) S.dupRoleSeen=Date.now();
-      return;
-    }
-    S.peers[role]={lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
-      acc:typeof d.acc==="number"?d.acc:null,t:Math.min(d.t,Date.now())};
-  });
+  c.on("message",function(t,payload){ onRelayMessage(t.split("/").pop(), payload.toString()); });
+}
+function onRelayMessage(role, txt){
+  if(role==="cfg"){
+    if(S.role==="truck" || !txt) return;          // Truck 1 owns the settings
+    var c; try{ c=JSON.parse(txt); }catch(e){ return; }
+    if(!validCfg(c) || typeof c.t!=="number") return;
+    S.cfg={trucks:c.trucks, ranges:c.ranges}; S.cfgFrom="truck1"; S.cfgT=c.t;
+    return;
+  }
+  if(ROLES.indexOf(role)<0) return;
+  if(!txt){ if(role!==S.role) delete S.peers[role]; return; }
+  var d; try{ d=JSON.parse(txt); }catch(e){ return; }
+  if(typeof d.lat!=="number"||typeof d.lon!=="number"||typeof d.t!=="number") return;
+  if(Math.abs(d.lat)>90||Math.abs(d.lon)>180) return;
+  if(role===S.role){
+    if(d.id!==myId && Date.now()-d.t<STALE_MS) S.dupRoleSeen=Date.now();
+    return;
+  }
+  S.peers[role]={lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
+    acc:typeof d.acc==="number"?d.acc:null,t:Math.min(d.t,Date.now())};
 }
 function publishMine(force){
   var f=S.lastFix; if(!f||!S.client||!S.connected) return;
@@ -307,6 +342,11 @@ function publishMine(force){
   S.lastPub=now;
   var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:now};
   S.client.publish(topic(S.role),JSON.stringify(msg),{qos:0,retain:true});
+}
+function publishCfg(){
+  if(S.role!=="truck"||!S.client||!S.connected) return;
+  var msg={id:myId,trucks:S.cfg.trucks,ranges:S.cfg.ranges,t:Date.now()};
+  S.client.publish(topic("cfg"),JSON.stringify(msg),{qos:0,retain:true});
 }
 
 /* ---------- GPS ---------- */
@@ -336,16 +376,18 @@ function startGps(){
 /* ---------- practice mode ---------- */
 function simTick(){
   var t=(Date.now()-S.simT0)/1000, v=80/3.6;
-  var lat0=-33.8615, lon0=121.8912;
-  var gL=1250+900*Math.sin(t/120), gR=1000+750*Math.sin(t/100+1);
-  var dgL=900/120*Math.cos(t/120), dgR=750/100*Math.cos(t/100+1);
-  var sT=v*t, now=Date.now();
+  var lat0=-33.8615, lon0=121.8912, now=Date.now();
+  var gL=1250+900*Math.sin(t/120),  dgL=900/120*Math.cos(t/120);       // front: 350–2150 m
+  var gM=70+45*Math.sin(t/60),      dgM=45/60*Math.cos(t/60);          // between trucks: 25–115 m
+  var gR=600+550*Math.sin(t/100+1), dgR=550/100*Math.cos(t/100+1);     // rear: 50–1150 m
   function put(role,s,spd){ S.peers[role]={lat:lat0+s/111320,lon:lon0,spd:spd,hdg:0,acc:5,t:now}; }
+  var sT=v*t;
   put("truck",sT,v);
   put("lead",sT+gL,v+dgL);
-  var cyc=t%150;
-  if(!(cyc>95&&cyc<140)) put("rear",sT-gR,v-dgR);   // rear drops out for 45 s every 2.5 min
-  if(S.role==="truck"||!S.peers[S.role]) put(S.role, S.role==="lead"?sT+gL:S.role==="rear"?sT-gR:sT, v);
+  var last=sT, lastV=v;
+  if(twoTrucks()){ put("truck2",sT-gM,v-dgM); last=sT-gM; lastV=v-dgM; }
+  var cyc=t%150, rearGone = cyc>95&&cyc<140 && S.role!=="rear";      // rear drops out for 45 s every 2.5 min
+  if(!rearGone) put("rear",last-gR,lastV-dgR);
 }
 
 /* ---------- alerts ---------- */
@@ -367,75 +409,99 @@ function say(key,text,every){
   S.lastSpeak[key]=now;
   try{ if("speechSynthesis" in window){ var u=new SpeechSynthesisUtterance(text); u.lang="en-AU"; u.rate=1.05; speechSynthesis.speak(u); } }catch(e){}
 }
-function alarms(gA,gB,now){
+function alarms(results,now){
   if(now<S.mutedUntil) return;
-  var bad=[];
-  [[gA,"lead","Lead pilot"],[gB,"rear","Rear pilot"]].forEach(function(x){
-    var g=x[0];
+  var bad=false;
+  results.forEach(function(x){
+    var g=x.info;
     if(g.state==="close"||g.state==="far"){
-      bad.push(x[1]);
-      say("gap_"+x[1], x[2]+(g.state==="far"?" too far, ":" too close, ")+Math.round(g.value)+" metres", 30000);
+      bad=true;
+      say("gap_"+x.gap.key, GAPNAME[x.gap.key]+(g.state==="far"?" too far, ":" too close, ")+Math.round(g.value)+" metres", 30000);
     }
   });
-  if(bad.length && now-S.lastBeep>5000){
+  if(bad && now-S.lastBeep>5000){
     S.lastBeep=now; beep(1150,0.18,0); beep(1150,0.18,0.28);
     try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
   }
-  ROLES.forEach(function(r){
+  chain().forEach(function(r){
     if(r===S.role) return;
     var p=S.peers[r]; var stale = p && now-p.t>STALE_MS;
-    if(stale && !S.wasStale[r]){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+ROLE_NAMES[r].toLowerCase(),60000); }
+    if(stale && !S.wasStale[r]){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),60000); }
     S.wasStale[r]=!!stale;
   });
 }
 
-/* ---------- role order check ---------- */
+/* ---------- role order check (uses Truck 1's direction of travel) ---------- */
 function orderCheck(now){
-  var t=S.peers.truck, l=S.peers.lead, r=S.peers.rear;
+  var t=S.peers.truck;
   if(!t||t.hdg==null||!(t.spd>4)||now-t.t>STALE_MS){ S.orderBadSince=0; return false; }
-  var bad=false;
+  function fresh(p){ return p && now-p.t<STALE_MS && dist(t,p)>150; }
   function ahead(p){ var d=Math.abs(((bearing(t,p)-t.hdg)+540)%360-180); return d<90; }
-  if(l&&now-l.t<STALE_MS&&dist(t,l)>150&&!ahead(l)) bad=true;
-  if(r&&now-r.t<STALE_MS&&dist(t,r)>150&&ahead(r)) bad=true;
+  var bad=false, l=S.peers.lead, t2=S.peers.truck2, r=S.peers.rear;
+  if(fresh(l) && !ahead(l)) bad=true;
+  if(fresh(t2) && ahead(t2)) bad=true;
+  if(fresh(r) && ahead(r)) bad=true;
   if(!bad){ S.orderBadSince=0; return false; }
   if(!S.orderBadSince) S.orderBadSince=now;
   return now-S.orderBadSince>60000 && now>S.orderSnoozeUntil;
 }
 
 /* ---------- render ---------- */
-function setGap(el,g,small,rangeEl,aheadRole,behindRole){
-  var box=$(el), num=$(el+"Num"), sub=$(el+"Sub");
-  box.className="gap"+(small?" small":"");
-  $(rangeEl).textContent=S.minGap+"–"+S.maxGap+" m";
-  if(g.state==="none"){
-    box.classList.add("none"); num.innerHTML="–";
-    sub.textContent="Waiting for "+ROLE_NAMES[g.missing].toLowerCase(); return;
-  }
-  num.innerHTML=fmtM(g.value);
-  if(g.state==="ok"){ box.classList.add("ok"); sub.textContent="In range"; }
-  else if(g.state==="far"){ box.classList.add("bad"); sub.textContent="Too far · over by "+fmtMplain(g.value-S.maxGap); }
-  else if(g.state==="close"){ box.classList.add("bad"); sub.textContent="Too close · under by "+fmtMplain(S.minGap-g.value); }
+function ensureLayout(){
+  var gaps=gapList(), key=S.role+"|"+gaps.map(function(g){return g.key;}).join(",");
+  if(key===S.layoutKey) return gaps;
+  S.layoutKey=key;
+  var h="";
+  gaps.forEach(function(g,i){
+    var mine = S.role===g.a || S.role===g.b;
+    h+='<div class="gap none'+(mine?"":" small")+'" id="gap_'+g.key+'">'+
+       '<div class="who"><span id="gap_'+g.key+'_who"></span><span id="gap_'+g.key+'_range"></span></div>'+
+       '<div class="num" id="gap_'+g.key+'_num">–</div><div class="sub" id="gap_'+g.key+'_sub"></div></div>';
+    if(i<gaps.length-1) h+='<div class="vehicle'+(gaps.length>2?" mini":"")+'">'+TRUCK_SVG+'<span>'+nm(g.b)+'</span></div>';
+  });
+  $("gaps").innerHTML=h;
+  var c=chain(), sp=$("speeds");
+  sp.className="speeds"+(c.length===4?" four":"");
+  sp.innerHTML=c.map(function(r){ return '<div><span>'+SHORT[r].replace("Truck 1",twoTrucks()?"Truck 1":"Truck")+'</span><b id="spd_'+r+'">–</b></div>'; }).join("");
+  return gaps;
+}
+function setGap(g,info){
+  var key=g.key, mine = S.role===g.a || S.role===g.b, r=S.cfg.ranges[key];
+  var box=$("gap_"+key), num=$("gap_"+key+"_num"), sub=$("gap_"+key+"_sub");
+  box.className="gap"+(mine?"":" small");
+  $("gap_"+key+"_who").textContent=gapLabel(g);
+  $("gap_"+key+"_range").textContent=fmtRange(r);
+  if(info.state==="none"){ box.classList.add("none"); num.innerHTML="–"; sub.textContent="Waiting for "+nm(info.missing).toLowerCase(); return; }
+  num.innerHTML=fmtM(info.value);
+  if(info.state==="ok"){ box.classList.add("ok"); sub.textContent="In range"; }
+  else if(info.state==="far"){ box.classList.add("bad"); sub.textContent="Too far · over by "+fmtMplain(info.value-r.max); }
+  else if(info.state==="close"){ box.classList.add("bad"); sub.textContent="Too close · under by "+fmtMplain(r.min-info.value); }
   else {
     box.classList.add("stale");
-    sub.textContent=ROLE_NAMES[g.who]+" last seen "+fmtAge(g.age)+" ago"+(g.est!=null?" · est. "+fmtMplain(g.est):" · too long to estimate");
+    sub.textContent=nm(info.who)+" last seen "+fmtAge(info.age)+" ago"+(info.est!=null?" · est. "+fmtMplain(info.est):" · too long to estimate");
   }
 }
-var labels={
-  lead:{A:"Truck behind you",B:"Truck to rear pilot",smallA:false,smallB:true},
-  truck:{A:"Lead pilot ahead",B:"Rear pilot behind",smallA:false,smallB:false},
-  rear:{A:"Lead pilot to truck",B:"Truck ahead of you",smallA:true,smallB:false}
-};
+function renderRangePanel(){
+  var t1 = S.role==="truck";
+  $("liveEdit").hidden=!t1; $("liveView").hidden=t1;
+  if(t1){ $("liveSrc").textContent="This phone sets the gaps for everyone on the trip."; return; }
+  var c=S.cfg;
+  $("liveView").textContent="Front "+fmtRange(c.ranges.front)+(twoTrucks()?" · Between trucks "+fmtRange(c.ranges.mid):"")+" · Rear "+fmtRange(c.ranges.rear);
+  $("liveSrc").textContent = S.practice ? "Practice mode uses the default gaps." :
+    S.cfgFrom==="truck1" ? "Set by Truck 1 at "+hhmm(S.cfgT)+"." : "Defaults. Truck 1 has not connected yet.";
+}
 function render(){
   if(S.practice) simTick();
   var now=Date.now();
-  var gA=gapInfo("lead","truck",now), gB=gapInfo("truck","rear",now), L=labels[S.role];
-  $("gapAWho").textContent=L.A; $("gapBWho").textContent=L.B;
-  setGap("gapA",gA,L.smallA,"gapARange"); setGap("gapB",gB,L.smallB,"gapBRange");
-  ["lead","truck","rear"].forEach(function(r){
-    var p=S.peers[r], el=$("spd"+r.charAt(0).toUpperCase()+r.slice(1));
+  var gaps=ensureLayout();
+  var results=gaps.map(function(g){ return {gap:g, info:gapInfo(g.a,g.b,S.cfg.ranges[g.key],now)}; });
+  results.forEach(function(x){ setGap(x.gap,x.info); });
+  chain().forEach(function(r){
+    var p=S.peers[r], el=$("spd_"+r); if(!el) return;
     el.textContent = p ? kmh(p.spd) : "–";
     el.style.color = (p && now-p.t>STALE_MS) ? "var(--stale)" : "";
   });
+  $("myRole").textContent=nm(S.role);
   var on = S.practice || S.connected;
   $("netDot").className="dot "+(on?"on":"off");
   $("netTxt").textContent = S.practice ? "Practice" : S.netErr ? S.netErr : S.connected ? "Relay on" : "Relay off";
@@ -451,12 +517,14 @@ function render(){
     $("scrDot").className="dot "+(held?"on":"off");
     $("scrTxt").textContent = !held ? "Screen may lock" : vidOn ? "Screen forced on" : "Screen on";
   }
+  if(!$("settings").hidden) renderRangePanel();
   /* banners */
   var b=[];
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
   if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
-  if(now-S.dupRoleSeen<STALE_MS) b.push({text:"Another phone is also set as "+ROLE_NAMES[S.role]+". Check each phone's role.",change:true});
-  if(orderCheck(now)) b.push({text:"The vehicle order looks wrong. Are you still the "+ROLE_NAMES[S.role].toLowerCase()+"?",confirm:true,change:true});
+  if(!S.practice && S.role!=="truck" && S.cfgFrom==="default" && S.connected) b.push({text:"Using default gaps until Truck 1 connects."});
+  if(now-S.dupRoleSeen<STALE_MS) b.push({text:"Another phone is also set as "+nm(S.role)+". Check each phone's role.",change:true});
+  if(orderCheck(now)) b.push({text:"The vehicle order looks wrong. Are you still the "+nm(S.role).toLowerCase()+"?",confirm:true,change:true});
   var muted=now<S.mutedUntil, left=Math.ceil((S.mutedUntil-now)/1000);
   var mm=Math.floor(left/60)+":"+("0"+(left%60)).slice(-2);
   $("mute").textContent = muted ? "Unmute ("+mm+")" : "Mute 5 min";
@@ -470,7 +538,7 @@ function render(){
       var p=document.createElement("span"); p.textContent=x.text; d.appendChild(p);
       if(x.confirm||x.change){
         var row=document.createElement("div"); row.className="row";
-        if(x.confirm){ var y=document.createElement("button"); y.type="button"; y.textContent="Yes, still "+ROLE_NAMES[S.role].toLowerCase();
+        if(x.confirm){ var y=document.createElement("button"); y.type="button"; y.textContent="Yes, still "+nm(S.role).toLowerCase();
           y.onclick=function(){ S.orderSnoozeUntil=Date.now()+600000; S.orderBadSince=0; render(); }; row.appendChild(y); }
         var c=document.createElement("button"); c.type="button"; c.textContent="Change role"; c.onclick=goSetup; row.appendChild(c);
         d.appendChild(row);
@@ -478,8 +546,23 @@ function render(){
       host.appendChild(d);
     });
   }
-  alarms(gA,gB,now);
+  alarms(results,now);
 }
+
+/* ---------- range inputs (pre = "s_" setup screen, "l_" live settings) ---------- */
+function fillRanges(pre,c){
+  var r=c.ranges;
+  $(pre+"fmin").value=r.front.min; $(pre+"fmax").value=r.front.max;
+  $(pre+"mmin").value=r.mid.min;   $(pre+"mmax").value=r.mid.max;
+  $(pre+"rmin").value=r.rear.min;  $(pre+"rmax").value=r.rear.max;
+  $(pre+"two").checked=c.trucks===2; $(pre+"midRow").hidden=c.trucks!==2;
+}
+function readRanges(pre){
+  function rr(a,b){ return {min:parseInt($(pre+a).value,10), max:parseInt($(pre+b).value,10)}; }
+  var c={trucks:$(pre+"two").checked?2:1, ranges:{front:rr("fmin","fmax"), mid:rr("mmin","mmax"), rear:rr("rmin","rmax")}};
+  return validCfg(c) ? c : null;
+}
+function saveMyCfg(c){ S.myCfg=clone(c); store.set("cfg",JSON.stringify(c)); }
 
 /* ---------- screens ---------- */
 function randCode(){
@@ -491,11 +574,9 @@ function shareUrl(){ return location.origin+location.pathname+"?trip="+encodeURI
 function pickRole(r){
   S.role=r;
   Array.prototype.forEach.call(document.querySelectorAll(".role"),function(b){ b.setAttribute("aria-pressed", String(b.dataset.role===r)); });
-}
-function readRange(minId,maxId){
-  var mn=parseInt($(minId).value,10), mx=parseInt($(maxId).value,10);
-  if(!(mn>=0)||!(mx>0)||mx<=mn) return false;
-  S.minGap=mn; S.maxGap=mx; store.set("min",mn); store.set("max",mx); return true;
+  var t1 = r==="truck";
+  $("setupRanges").hidden=!t1 && !$("practice").checked;
+  $("setupRangeNote").hidden=t1 || $("practice").checked;
 }
 function videoCheck(){
   var v=$("nosleep");
@@ -530,22 +611,27 @@ function setScreen(keep,force){
 function start(){
   var err=$("setupErr"); err.hidden=true;
   var code=$("trip").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
+  var practice=$("practice").checked;
   if(!S.role){ err.textContent="Choose this phone's role first."; err.hidden=false; return; }
-  if(code.length<4 && !$("practice").checked){ err.textContent="Enter a trip code of at least 4 letters or numbers."; err.hidden=false; return; }
-  if(!readRange("minGap","maxGap")){ err.textContent="Enter a minimum gap smaller than the maximum gap."; err.hidden=false; return; }
-  S.trip=code||"PRACTICE"; S.practice=$("practice").checked;
+  if(code.length<4 && !practice){ err.textContent="Enter a trip code of at least 4 letters or numbers."; err.hidden=false; return; }
+  if(S.role==="truck" || practice){
+    var c=readRanges("s_");
+    if(!c){ err.textContent="Each gap needs a minimum smaller than its maximum."; err.hidden=false; return; }
+    if(S.role==="truck") saveMyCfg(c);
+    S.cfg=clone(c); S.cfgFrom = S.role==="truck" ? "self" : "practice";
+  } else { S.cfg=clone(DEFAULT_CFG); S.cfgFrom="default"; S.cfgT=0; }
+  S.trip=code||"PRACTICE"; S.practice=practice;
   store.set("role",S.role); store.set("trip",S.trip);
   try{ history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
-  S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0;
+  S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   if(S.practice){ S.simT0=Date.now(); }
   else { startGps(); connectRelay(); }
   S.timers.push(setInterval(render,1000));
-  S.timers.push(setInterval(function(){ publishMine(true); },10000));
-  $("myRole").textContent=ROLE_NAMES[S.role]; 
+  S.timers.push(setInterval(function(){ publishMine(true); publishCfg(); },10000));
   $("shareLink").textContent=shareUrl();
-  $("minGap2").value=S.minGap; $("maxGap2").value=S.maxGap;
+  fillRanges("l_",S.cfg);
   $("setup").hidden=true; $("run").hidden=false; $("settings").hidden=true; $("toggleSettings").textContent="Settings";
   setScreen(S.keepOn,S.force);
   render();
@@ -565,6 +651,7 @@ function goSetup(){ teardown(false); $("run").hidden=true; $("setup").hidden=fal
 
 /* ---------- wiring ---------- */
 Array.prototype.forEach.call(document.querySelectorAll(".role"),function(b){ b.addEventListener("click",function(){ pickRole(b.dataset.role); }); });
+$("practice").addEventListener("change",function(){ pickRole(S.role); });
 $("newTrip").addEventListener("click",function(){ $("trip").value=randCode(); });
 $("start").addEventListener("click",start);
 $("mute").addEventListener("click",function(){
@@ -575,14 +662,22 @@ $("mute").addEventListener("click",function(){
 $("toggleSettings").addEventListener("click",function(){
   var p=$("settings"); p.hidden=!p.hidden;
   $("toggleSettings").textContent = p.hidden ? "Settings" : "Close settings";
-  if(!p.hidden){ try{ p.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ p.scrollIntoView(); } }
+  if(!p.hidden){ renderRangePanel(); try{ p.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ p.scrollIntoView(); } }
   else { try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){ window.scrollTo(0,0); } }
 });
 $("stop").addEventListener("click",function(){ teardown(true); $("run").hidden=true; $("setup").hidden=false; });
 $("changeRole").addEventListener("click",goSetup);
 $("keepOn2").addEventListener("change",function(){ setScreen($("keepOn2").checked,S.force); });
 $("forceOn2").addEventListener("change",function(){ setScreen(S.keepOn,$("forceOn2").checked); });
-["minGap2","maxGap2"].forEach(function(id){ $(id).addEventListener("change",function(){ if(readRange("minGap2","maxGap2")) render(); }); });
+$("s_two").addEventListener("change",function(){ $("s_midRow").hidden=!$("s_two").checked; });
+["l_fmin","l_fmax","l_mmin","l_mmax","l_rmin","l_rmax","l_two"].forEach(function(id){
+  $(id).addEventListener("change",function(){
+    $("l_midRow").hidden=!$("l_two").checked;
+    var c=readRanges("l_"); if(!c) return;
+    S.cfg=clone(c); if(S.role==="truck"){ saveMyCfg(c); publishCfg(); }
+    S.layoutKey=""; render();
+  });
+});
 $("copyLink").addEventListener("click",function(){
   var u=shareUrl();
   var done=function(){ $("copied").textContent="Copied"; };
@@ -594,11 +689,11 @@ document.addEventListener("visibilitychange",function(){ if(document.visibilityS
 var q=new URLSearchParams(location.search);
 $("trip").value=(q.get("trip")||"1234").toUpperCase();
 Array.prototype.forEach.call(document.querySelectorAll(".ver"),function(e){ e.textContent=VERSION; });
-$("minGap").value=S.minGap; $("maxGap").value=S.maxGap;
+fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
-if(S.role) pickRole(S.role);
+pickRole(S.role);
 
-window.__pg={gapInfo:gapInfo,dist:dist,S:S};
+window.__pg={gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage};
 })();
 </script>
 </body>

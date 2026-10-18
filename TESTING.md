@@ -24,6 +24,11 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Battery use over the trip, with and without Keep screen on.
 - [ ] Were alerts too frequent or too quiet?
 
+## Two-truck field check
+
+- [ ] Truck 1 ticks "Second truck on this trip"; all four phones show three gaps.
+- [ ] Truck 1 changes a gap in Settings; the pilots' phones show the new range within about 10 s.
+
 ## Known issues
 
 - Distance is a straight line; on bends the road distance is longer.

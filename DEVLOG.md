@@ -19,6 +19,14 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 - **Push straight to the live page (option 2b).** Ryan's call: the app is small, so the risk is low. Revisit if it grows or if a push ever breaks a live trip.
 - **Relay library stored in the repo.** Removes the dependency on unpkg.com being up.
 
+### Decisions (v1.1.0, evening)
+
+- **Second truck is a separate vehicle** driving behind the first, not attached to the same load (Ryan). So the gap between trucks is measured and alarmed like the others.
+- **Front and rear have different ranges** because the pilots work differently (Ryan). Defaults set by Ryan: front 500–2000 m, rear 100–1000 m. Between trucks defaults to 0–100 m, from the Main Roads convoy rule (cl. 9.11.10: no more than 100 m between convoy RAVs). Ryan gave no figure; Truck 1 can change it per job.
+- **Truck 1 sets the gaps for the trip** so all phones alarm on the same figures. They are sent as a retained relay message on `bhe-pilotgap/v1/<trip>/cfg`, re-sent every 10 s and on every change. Other phones use the defaults until it arrives and say so on screen. Bad values (min not below max) are ignored.
+- **Role id `truck` kept for Truck 1** so a phone still on v1.0.0 still matches during the changeover.
+- **Truck 2 is included automatically** if Truck 1 ticks "Second truck on this trip", if a Truck 2 phone appears, or if this phone is Truck 2.
+
 ### Faults found
 
 - **Settings button did nothing (fixed in `fe6b45f`).** Cause: `.panel{display:flex}` overrode the `hidden` attribute, so the panel was always shown at the bottom of the page and the button only toggled an attribute with no visible effect. Fix: `[hidden]{display:none!important}`. Lesson: test by looking at the screen at phone size, not only by checking element state in code. `tests/smoke.mjs` now checks visibility.

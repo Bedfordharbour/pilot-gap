@@ -7,9 +7,9 @@ Live page: https://bedfordharbour.github.io/pilot-gap/
 ## Using it
 
 1. Open the live page on each phone.
-2. Tap this phone's role: Lead, Truck or Rear.
+2. Tap this phone's role: Lead, Truck 1, Truck 2 (only when there is a second truck) or Rear.
 3. Use the same trip code on all three phones (default `1234`; **New code** makes a random one).
-4. Set the required gap (default 500–2000 m) and tap **Start**.
+4. On Truck 1 only: set the gaps (defaults front 500–2000 m, between trucks 0–100 m, rear 100–1000 m) and tick **Second truck on this trip** if there is one. The other phones get these from Truck 1. Tap **Start**.
 5. Mount the phone, plug it in and leave the page open.
 
 Practice mode runs three pretend vehicles, with no GPS or other phones needed.
@@ -17,7 +17,8 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 ## How it works
 
 - Each phone reads its own GPS (position, speed and direction) and sends it every 2 seconds to a public relay (HiveMQ's public MQTT relay, `broker.hivemq.com`), under `bhe-pilotgap/v1/<trip code>/<role>`.
-- Each phone listens to the other two and works out the straight-line gaps: lead to truck, and truck to rear.
+- Each phone listens to the others and works out the straight-line gaps: front (lead to Truck 1), between trucks (Truck 1 to Truck 2) and rear (last truck to rear pilot).
+- Truck 1 sends the gap ranges and number of trucks on `bhe-pilotgap/v1/<trip code>/cfg`; the other phones use them.
 - Green means in range. Red means outside the range: it beeps, speaks, and vibrates on Android.
 - No update for 15 seconds means grey: the last known gap, "last seen", and an estimate from speed for up to 2 minutes.
 - If the vehicle order looks wrong for over a minute, it asks the driver to confirm their role.
