@@ -110,6 +110,12 @@ code{font-size:14px;word-break:break-all}
     <h1><span>Pilot</span> Gap</h1>
     <p class="lede">Live gaps between the lead pilot, the truck or trucks, and the rear pilot.</p>
 
+    <div class="logbox ended" id="updateBox" hidden>
+      <strong>New version available</strong>
+      <span class="note" id="updateInfo"></span>
+      <button id="updateNow" type="button">Update now</button>
+    </div>
+
     <div class="logbox" id="lastLog" hidden>
       <strong id="lastLogTitle">Last trip log</strong>
       <span class="note" id="lastLogInfo"></span>
@@ -127,7 +133,7 @@ code{font-size:14px;word-break:break-all}
     </div>
 
     <div class="field">
-      <label class="label" for="trip">Trip code (same on every phone, at least 6 letters or numbers)</label>
+      <label class="label" for="trip">Trip code (same on every phone, at least 4 letters or numbers)</label>
       <div class="row">
         <input id="trip" type="text" maxlength="12" autocomplete="off" spellcheck="false">
         <button id="newTrip" type="button">New code</button>
@@ -214,10 +220,11 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.2.1 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.3.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
-var MIN_CODE = 6;
+var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
+var UPDATE_CHECK_MS = 600000;   // look for a newer version every 10 min
 var LOG_MAX = 6000;           // trip log entries kept on the phone
 var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry continues the same log
 var STALE_MS = 15000;      // no update for 15 s = lost contact
@@ -314,6 +321,30 @@ function unseal(txt){
     return crypto.subtle.decrypt({name:"AES-GCM",iv:a.slice(0,12)},S.key,a.slice(12))
       .then(function(pt){ return JSON.parse(dec.decode(pt)); }).catch(function(){ return null; });
   }catch(e){ return Promise.resolve(null); }
+}
+
+/* ---------- update check (2a): never reloads by itself ---------- */
+function verNum(v){ var m=/(\d+)\.(\d+)\.(\d+)/.exec(v||""); return m ? (+m[1])*1e6+(+m[2])*1e3+(+m[3]) : 0; }
+function checkUpdate(){
+  try{
+    fetch(location.pathname+"?check="+Date.now(),{cache:"no-store"}).then(function(r){ return r.ok?r.text():""; }).then(function(t){
+      var m=/var VERSION = "([^"]+)"/.exec(t||""); if(!m) return;
+      if(verNum(m[1])>verNum(VERSION)){
+        if(S.newVersion!==m[1]){ S.newVersion=m[1]; L("update","newer version on the website: "+m[1]); }
+        showUpdate();
+      }
+    }).catch(function(){});
+  }catch(e){}
+}
+function showUpdate(){
+  var on=!!S.newVersion; $("updateBox").hidden=!on;
+  if(on) $("updateInfo").textContent="Version "+S.newVersion.split(" ")[0]+" is on the website. This phone has "+VERSION.split(" ")[0]+". Phones on different versions may not see each other.";
+}
+function doUpdate(){
+  L("update","driver tapped update"); saveLogLocal();
+  var q=new URLSearchParams(location.search); q.set("v",String(Date.now()));
+  if(S.trip && S.trip!=="PRACTICE") q.set("trip",S.trip);
+  location.replace(location.pathname+"?"+q.toString());
 }
 
 /* ---------- trip shape ---------- */
@@ -634,6 +665,7 @@ function render(){
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
   if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
   if(S.cryptoErr) b.push({text:S.cryptoErr});
+  if(S.newVersion) b.push({text:"New version "+S.newVersion.split(" ")[0]+" is on the website. Update when stopped: the page restarts and you tap Start again.",update:true});
   if(!S.practice && S.role!=="truck" && S.cfgFrom==="default" && S.connected) b.push({text:"Using default gaps until Truck 1 connects."});
   if(now-S.dupRoleSeen<STALE_MS){ if(!S.dupLogged){ S.dupLogged=true; L("role","another phone is also "+nm(S.role)); } } else S.dupLogged=false;
   if(now-S.dupRoleSeen<STALE_MS) b.push({text:"Another phone is also set as "+nm(S.role)+". Check each phone's role.",change:true});
@@ -650,6 +682,10 @@ function render(){
     b.forEach(function(x){
       var d=document.createElement("div"); d.className="banner";
       var p=document.createElement("span"); p.textContent=x.text; d.appendChild(p);
+      if(x.update){
+        var ub=document.createElement("button"); ub.type="button"; ub.textContent="Update now"; ub.onclick=doUpdate;
+        var urow=document.createElement("div"); urow.className="row"; urow.appendChild(ub); d.appendChild(urow);
+      }
       if(x.confirm||x.change){
         var row=document.createElement("div"); row.className="row";
         if(x.confirm){ var y=document.createElement("button"); y.type="button"; y.textContent="Yes, still "+nm(S.role).toLowerCase();
@@ -754,6 +790,7 @@ function start(){
       .catch(function(e){ S.cryptoErr="Could not set up scrambling: "+((e&&e.message)||e); L("error",S.cryptoErr); });
   }
   S.timers.push(setInterval(render,1000));
+  checkUpdate();
   S.timers.push(setInterval(function(){ publishMine(true); publishCfg(); },10000));
   $("shareLink").textContent=shareUrl();
   fillRanges("l_",S.cfg);
@@ -832,8 +869,10 @@ fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
 pickRole(S.role);
 showLastLog(false);
+$("updateNow").addEventListener("click",doUpdate);
+checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 
-window.__pg={gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
+window.__pg={checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
 })();
 </script>
 </body>

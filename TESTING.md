@@ -29,6 +29,11 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Truck 1 ticks "Second truck on this trip"; all four phones show three gaps.
 - [ ] Truck 1 changes a gap in Settings; the pilots' phones show the new range within about 10 s.
 
+## Update check
+
+- [ ] After a new version is pushed, a phone left open shows "New version … Update now" within about 10–20 minutes (website copy can lag up to 10 min).
+- [ ] Update now restarts the page with the same trip code; tap Start again.
+
 ## Trip log check
 
 - [ ] After End trip, the start screen shows "Trip ended. Save the trip log…"; Save trip log sends the file to Dropbox or Downloads.

@@ -27,6 +27,7 @@ const fails = [];
 const check = (name, ok, got) => { console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '  got: ' + JSON.stringify(got))); if (!ok) fails.push(name); };
 
 await p.goto('http://localhost:8765/');
+check('no update box when the website has the same version', !(await p.isVisible('#updateBox')));
 check('relay library loads from repo', await p.evaluate(() => typeof mqtt) === 'object');
 const code0 = await p.inputValue('#trip');
 check('default trip code is 123456', code0 === '123456', code0);
@@ -77,8 +78,8 @@ await p.click('#stop');
 
 // Scrambled relay messages (8b) and settings from Truck 1 reaching a pilot (relay simulated)
 await p.click('[data-role=rear]'); await p.uncheck('#practice');
-await p.fill('#trip', '1234'); await p.click('#start'); await p.waitForTimeout(400);
-check('codes shorter than 6 are refused', await p.isVisible('#setupErr'), await p.textContent('#setupErr'));
+await p.fill('#trip', '123'); await p.click('#start'); await p.waitForTimeout(400);
+check('codes shorter than 4 are refused', await p.isVisible('#setupErr'), await p.textContent('#setupErr'));
 await p.fill('#trip', 'BHE777'); await p.click('#start');
 await p.waitForFunction(() => window.__pg.S.key !== null, null, { timeout: 15000 });
 const tid = await p.evaluate(() => window.__pg.S.topicId);
@@ -130,6 +131,15 @@ await p.screenshot({ path: path.join(root, 'tests', 'phone-trip-ended.png') });
 await p.goto('http://localhost:8765/'); await p.waitForTimeout(500);
 check('page opens with 123456 again', (await p.inputValue('#trip')) === '123456', await p.inputValue('#trip'));
 check('last trip log still offered after reload', await p.isVisible('#lastLog'));
+// update check: serve a newer version number and check the box appears, without reloading
+await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
+await p.route('**/?check=*', async r => { const res = await r.fetch(); const body = (await res.text()).replace(/var VERSION = "[^"]+"/, 'var VERSION = "9.9.9 (test)"'); await r.fulfill({ response: res, body }); });
+await p.evaluate(() => window.__pg.checkUpdate()); await p.waitForTimeout(800);
+check('newer version on website shows update box', await p.isVisible('#updateBox') && /9\.9\.9/.test(await p.textContent('#updateInfo')), await p.textContent('#updateInfo'));
+await p.click('[data-role=lead]'); await p.check('#practice'); await p.click('#start'); await p.waitForTimeout(1500);
+check('update banner during a trip, no reload by itself', await p.locator('#banners button', { hasText: 'Update now' }).count() === 1 && await p.isVisible('#gaps'));
+await p.screenshot({ path: path.join(root, 'tests', 'phone-update.png') });
+await p.unroute('**/?check=*');
 check('no script errors', errors.length === 0, errors);
 
 await b.close(); srv.close();

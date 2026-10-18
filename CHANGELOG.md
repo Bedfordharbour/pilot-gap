@@ -2,6 +2,12 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.3.0 — 18 Oct 2026
+
+- **Update check (2a).** The page looks for a newer version on the website when it opens, at Start and every 10 minutes. If there is one, it shows "New version … Update now" on the start screen and as a banner during a trip. It never reloads by itself; updating mid-trip restarts the page and the driver taps Start again. Logged.
+- Trip codes back to **4 or more** letters or numbers (Ryan declined the 6-character minimum for now; ask again once out of testing).
+- Smoke test: 47 checks.
+
 ## 1.2.1 — 18 Oct 2026
 
 - Fix: a phone whose clock is wrong no longer shows as "lost" on the others. Live messages are now timed by when they arrive (found in audit).

@@ -43,6 +43,15 @@ Ryan's decisions (20:18):
 - **9a: after the trial, a native Android app on DriveCheck's base** (background service, watchdog, build and signing method) plus the relay; the web page stays for browser users. Same message format, held together by a written message spec and a shared test. DriveCheck's change process applies.
 - **Some drivers use iPhones** (Ryan). iPhone users stay on the web page for now: no vibration, and no background tracking. An iPhone app needs an Apple developer account and Apple's review; not decided.
 
+### Decisions (v1.3.0, 20:37)
+
+- **2a: update check**, built. Never reloads by itself, so a driver is not dropped mid-trip; the banner says to update when stopped.
+- **4a declined:** no 6-character minimum for trip codes during testing; back to 4. **To do: ask again once the design is out of testing.**
+- **4b approved:** a new trip within 6 h continues the same log. **4c approved:** Save trip log on the start screen after End trip and in Settings.
+- **4d (no positions in the log): Ryan asked why.** Open; see the reply of 20:37. Positions were left out by Claude for privacy (a location record of drivers); not Ryan's decision.
+- **Where logs go:** Ryan asked whether logs can come straight to him or be kept somewhere other than the phone. Open.
+- **3 (old unscrambled positions on the relay under code 1234):** not answered yet.
+
 ### Faults found
 
 - **Settings button did nothing (fixed in `fe6b45f`).** Cause: `.panel{display:flex}` overrode the `hidden` attribute, so the panel was always shown at the bottom of the page and the button only toggled an attribute with no visible effect. Fix: `[hidden]{display:none!important}`. Lesson: test by looking at the screen at phone size, not only by checking element state in code. `tests/smoke.mjs` now checks visibility.
