@@ -2,6 +2,10 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.4.1 — 18 Oct 2026
+
+- Automatic log upload switched on: `UPLOAD_URL` set to Ryan's Google Apps Script web app (deployed 18 Oct 21:36). Logs land in the **Pilot Gap logs** folder in Ryan's Google Drive.
+
 ## 1.4.0 — 18 Oct 2026
 
 - **Location agreement** before the first real trip on each phone: the driver types their name and taps I agree. Wording includes "I agree to share my location as part of my piloting / driver duties". Name, time and wording version go into every trip log. Asked again if the wording changes. Not needed for practice mode.

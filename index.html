@@ -243,12 +243,12 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.4.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.4.1 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
 var UPDATE_CHECK_MS = 600000;   // look for a newer version every 10 min
-var UPLOAD_URL = "";               // Ryan's Google Apps Script web app address (server/upload-log.gs); empty = upload off
+var UPLOAD_URL = "https://script.google.com/macros/s/AKfycbzj3_RCN2TtS4FGEnKRv1Qq4j3vgdX_FugTKCq4X9clD5xWRb5L1h158oRDvm0iltNaYA/exec";  // Ryan's Google Apps Script (server/upload-log.gs), deployed 18 Oct 21:36
 var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops random posts, it is not a password
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
