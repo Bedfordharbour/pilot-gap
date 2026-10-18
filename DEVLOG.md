@@ -27,6 +27,22 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 - **Role id `truck` kept for Truck 1** so a phone still on v1.0.0 still matches during the changeover.
 - **Truck 2 is included automatically** if Truck 1 ticks "Second truck on this trip", if a Truck 2 phone appears, or if this phone is Truck 2.
 
+### Audit and decisions (v1.2.0, evening)
+
+Ryan asked for an audit of the app recommendation against earlier builds (DriveCheck). Corrections to what Claude had said:
+- Proposed Capacitor; wrong fit. DriveCheck already runs GPS in the background on Android (`DriveService`, watchdog, "stopped tracking" alarm, fixes CR-006 and CR-015).
+- Said GitHub would build the app; DriveCheck is built and signed in Claude's workspace using the Google build sites Ryan allowed.
+- "A day or two" for the app was optimistic given DriveCheck 1.5.0–1.5.7 and four regressions on 18 Oct.
+- Said only someone guessing the trip code could see positions. Wrong: anyone listening to every channel on the public relay could see every trip, including speeds (unverified, but how public relays normally work). Same concern as DriveCheck D-011.
+- Pilot Gap kept no record on the phone; DriveCheck D-051 added a developer log because faults could not be explained without one.
+- Claude made some design calls without explicit approval (single screen-on switch, 0–100 m truck gap, "Front gap" wording). Going forward, DriveCheck's approval rule (D-056) applies to the Pilot Gap app.
+
+Ryan's decisions (20:18):
+- **8a: trip log on each phone**, with Save log at End trip. Built in 1.2.0.
+- **8b: scramble messages with the trip code.** Built in 1.2.0. Claude proposed a random default code; **Ryan overruled: default stays a fixed 123456** for testing where privacy does not matter (20:21). Use New code for real trips.
+- **9a: after the trial, a native Android app on DriveCheck's base** (background service, watchdog, build and signing method) plus the relay; the web page stays for browser users. Same message format, held together by a written message spec and a shared test. DriveCheck's change process applies.
+- **Some drivers use iPhones** (Ryan). iPhone users stay on the web page for now: no vibration, and no background tracking. An iPhone app needs an Apple developer account and Apple's review; not decided.
+
 ### Faults found
 
 - **Settings button did nothing (fixed in `fe6b45f`).** Cause: `.panel{display:flex}` overrode the `hidden` attribute, so the panel was always shown at the bottom of the page and the button only toggled an attribute with no visible effect. Fix: `[hidden]{display:none!important}`. Lesson: test by looking at the screen at phone size, not only by checking element state in code. `tests/smoke.mjs` now checks visibility.

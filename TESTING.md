@@ -29,10 +29,17 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Truck 1 ticks "Second truck on this trip"; all four phones show three gaps.
 - [ ] Truck 1 changes a gap in Settings; the pilots' phones show the new range within about 10 s.
 
+## Trip log check
+
+- [ ] After End trip, the start screen shows "Trip ended. Save the trip log…"; Save trip log sends the file to Dropbox or Downloads.
+- [ ] The file opens and shows start, relay, gap and sample lines.
+
 ## Known issues
 
+- Phones on 1.0 or 1.1 cannot see phones on 1.2 (different relay channel). Every phone must show version 1.2.0 or later.
+- The default code 123456 is not private; anyone with the page and that code can see the trip.
+
 - Distance is a straight line; on bends the road distance is longer.
-- Public relay: anyone using the same trip code sees the positions. Use New code for sensitive jobs.
 - iPhones do not vibrate from a web page; they get beeps and voice only.
 - Sound needs a tap first (the Start button does this). If a phone was locked and reopened, tap the screen once.
 - The phone keeps a copy of the page for up to 10 minutes after a push; add `?v=<anything>` to the address to get the new one.

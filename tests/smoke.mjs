@@ -28,7 +28,11 @@ const check = (name, ok, got) => { console.log((ok ? 'PASS ' : 'FAIL ') + name +
 
 await p.goto('http://localhost:8765/');
 check('relay library loads from repo', await p.evaluate(() => typeof mqtt) === 'object');
-check('default trip code is 1234', (await p.inputValue('#trip')) === '1234', await p.inputValue('#trip'));
+const code0 = await p.inputValue('#trip');
+check('default trip code is 123456', code0 === '123456', code0);
+await p.click('#newTrip');
+const code1 = await p.inputValue('#trip');
+check('New code makes a random 6-character code', /^[A-Z0-9]{6}$/.test(code1) && code1 !== '123456', code1);
 check('version shown', /\d+\.\d+\.\d+/.test(await p.textContent('.ver')), await p.textContent('.ver'));
 check('screen options off by default', !(await p.isChecked('#keepOn')) && !(await p.isChecked('#forceOn')));
 check('four roles offered', (await p.locator('.role').count()) === 4);
@@ -71,18 +75,53 @@ check('no horizontal scroll (two trucks)', await p.evaluate(() => document.docum
 await p.screenshot({ path: path.join(root, 'tests', 'phone-two-trucks.png'), fullPage: true });
 await p.click('#stop');
 
-// Settings from Truck 1 reach a pilot's phone (relay message simulated)
-await p.click('[data-role=rear]'); await p.uncheck('#practice'); await p.click('#start'); await p.waitForTimeout(800);
-await p.evaluate(() => window.__pg.onRelayMessage('cfg', JSON.stringify({id:'x', trucks:2, t:Date.now(), ranges:{front:{min:400,max:1800}, mid:{min:10,max:90}, rear:{min:150,max:900}}})));
+// Scrambled relay messages (8b) and settings from Truck 1 reaching a pilot (relay simulated)
+await p.click('[data-role=rear]'); await p.uncheck('#practice');
+await p.fill('#trip', '1234'); await p.click('#start'); await p.waitForTimeout(400);
+check('codes shorter than 6 are refused', await p.isVisible('#setupErr'), await p.textContent('#setupErr'));
+await p.fill('#trip', 'BHE777'); await p.click('#start');
+await p.waitForFunction(() => window.__pg.S.key !== null, null, { timeout: 15000 });
+const tid = await p.evaluate(() => window.__pg.S.topicId);
+check('relay topic does not contain the trip code', !!tid && !tid.includes('BHE777') && tid.length === 24, tid);
+const sealed = await p.evaluate(() => window.__pg.seal({id:'x', trucks:2, t:Date.now(), ranges:{front:{min:400,max:1800}, mid:{min:10,max:90}, rear:{min:150,max:900}}}));
+check('messages are scrambled', !sealed.includes('ranges') && !sealed.includes('1800'), sealed.slice(0, 40));
+await p.evaluate(t => window.__pg.onRelayMessage('cfg', t), sealed);
 await p.waitForTimeout(1200);
 check('pilot picks up Truck 1 gaps', (await p.textContent('#gap_rear_range')) === '150–900 m', await p.textContent('#gap_rear_range'));
 check('pilot shows truck gap when Truck 1 says two trucks', (await p.locator('#gaps .gap').count()) === 3);
 await p.click('#toggleSettings'); await p.waitForTimeout(400);
 check('pilot cannot edit gaps', !(await p.isVisible('#l_fmin')) && /Set by Truck 1/.test(await p.textContent('#liveSrc')), await p.textContent('#liveSrc'));
-await p.evaluate(() => window.__pg.onRelayMessage('cfg', JSON.stringify({id:'x', trucks:1, t:Date.now(), ranges:{front:{min:900,max:100}, mid:{min:0,max:100}, rear:{min:100,max:1000}}})));
+check('Save trip log button in settings', await p.isVisible('#saveLog'));
+// a message scrambled with another code, and a plain-text message, are both ignored
+const foreign = await p.evaluate(async () => {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey('raw', enc.encode('OTHER9'), 'PBKDF2', false, ['deriveKey']);
+  const k = await crypto.subtle.deriveKey({name:'PBKDF2', salt:enc.encode('bhe-pilotgap v2'), iterations:150000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, enc.encode(JSON.stringify({id:'y', trucks:1, t:Date.now(), ranges:{front:{min:1,max:2}, mid:{min:0,max:100}, rear:{min:5,max:6}}}))));
+  const all = new Uint8Array(12 + ct.length); all.set(iv); all.set(ct, 12);
+  return btoa(String.fromCharCode(...all));
+});
+await p.evaluate(t => window.__pg.onRelayMessage('cfg', t), foreign);
+await p.evaluate(() => window.__pg.onRelayMessage('cfg', JSON.stringify({id:'z', trucks:1, t:Date.now(), ranges:{front:{min:1,max:2}, mid:{min:0,max:100}, rear:{min:5,max:6}}})));
+const badSealed = await p.evaluate(() => window.__pg.seal({id:'x', trucks:1, t:Date.now(), ranges:{front:{min:900,max:100}, mid:{min:0,max:100}, rear:{min:100,max:1000}}}));
+await p.evaluate(t => window.__pg.onRelayMessage('cfg', t), badSealed);
 await p.waitForTimeout(1200);
-check('bad settings ignored', (await p.textContent('#gap_rear_range')) === '150–900 m', await p.textContent('#gap_rear_range'));
-await p.click('#stop');
+check('wrong-code, plain and bad messages ignored', (await p.textContent('#gap_rear_range')) === '150–900 m', await p.textContent('#gap_rear_range'));
+
+// Trip log (8a)
+const logNow = await p.evaluate(() => window.__pg.logText(window.__pg.S.log));
+check('log records start, version and settings', /start\s+version 1\.\d+\.\d+/.test(logNow) && /cfg\s+from Truck 1: front 400–1800 m/.test(logNow), logNow.slice(0, 400));
+check('log records ignored messages', /unreadable message ignored|bad gap settings ignored/.test(logNow));
+check('log records gap changes', /gap\s+Rear gap:/.test(logNow));
+await p.click('#stop'); await p.waitForTimeout(400);
+check('End trip offers to save the log', await p.isVisible('#lastLog') && /Trip ended/.test(await p.textContent('#lastLogTitle')), await p.textContent('#lastLogTitle'));
+const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), p.click('#saveLastLog')]);
+check('Save trip log gives a file', !!dl && /^pilotgap-log-\d{8}-\d{4}-rear\.txt$/.test(dl.suggestedFilename()), dl && dl.suggestedFilename());
+await p.screenshot({ path: path.join(root, 'tests', 'phone-trip-ended.png') });
+await p.goto('http://localhost:8765/'); await p.waitForTimeout(500);
+check('page opens with 123456 again', (await p.inputValue('#trip')) === '123456', await p.inputValue('#trip'));
+check('last trip log still offered after reload', await p.isVisible('#lastLog'));
 check('no script errors', errors.length === 0, errors);
 
 await b.close(); srv.close();

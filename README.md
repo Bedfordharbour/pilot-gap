@@ -8,7 +8,7 @@ Live page: https://bedfordharbour.github.io/pilot-gap/
 
 1. Open the live page on each phone.
 2. Tap this phone's role: Lead, Truck 1, Truck 2 (only when there is a second truck) or Rear.
-3. Use the same trip code on all three phones (default `1234`; **New code** makes a random one).
+3. Use the same trip code on every phone (default `123456` for testing; **New code** makes a random one for real trips). At least 6 letters or numbers.
 4. On Truck 1 only: set the gaps (defaults front 500–2000 m, between trucks 0–100 m, rear 100–1000 m) and tick **Second truck on this trip** if there is one. The other phones get these from Truck 1. Tap **Start**.
 5. Mount the phone, plug it in and leave the page open.
 
@@ -16,9 +16,11 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 
 ## How it works
 
-- Each phone reads its own GPS (position, speed and direction) and sends it every 2 seconds to a public relay (HiveMQ's public MQTT relay, `broker.hivemq.com`), under `bhe-pilotgap/v1/<trip code>/<role>`.
+- Each phone reads its own GPS (position, speed and direction) and sends it every 2 seconds to a public relay (HiveMQ's public MQTT relay, `broker.hivemq.com`), under `bhe-pilotgap/v2/<hash of trip code>/<role>`.
+- Every message is scrambled with a key made from the trip code (AES-GCM, key by PBKDF2-SHA-256, 150,000 rounds). The code itself is never sent.
 - Each phone listens to the others and works out the straight-line gaps: front (lead to Truck 1), between trucks (Truck 1 to Truck 2) and rear (last truck to rear pilot).
-- Truck 1 sends the gap ranges and number of trucks on `bhe-pilotgap/v1/<trip code>/cfg`; the other phones use them.
+- Truck 1 sends the gap ranges and number of trucks on `.../cfg`; the other phones use them.
+- Each phone keeps a trip log; **Save trip log** after End trip (or in Settings) shares or downloads it as a .txt file.
 - Green means in range. Red means outside the range: it beeps, speaks, and vibrates on Android.
 - No update for 15 seconds means grey: the last known gap, "last seen", and an estimate from speed for up to 2 minutes.
 - If the vehicle order looks wrong for over a minute, it asks the driver to confirm their role.

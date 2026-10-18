@@ -90,6 +90,9 @@ button:focus-visible,.role:focus-visible,input:focus-visible{outline:3px solid v
 .rrow span:first-child{font-weight:600}
 .rrow input{font-size:18px;padding:8px 10px}
 .rview{font-weight:600}
+.logbox{border:1.5px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.logbox.ended{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
+.logbox.ended .note{color:inherit}
 .speeds div{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:6px 8px}
 .speeds b{display:block;font:700 22px/1.1 var(--display)}
 .speeds span{font-size:12px;color:var(--muted)}
@@ -107,6 +110,12 @@ code{font-size:14px;word-break:break-all}
     <h1><span>Pilot</span> Gap</h1>
     <p class="lede">Live gaps between the lead pilot, the truck or trucks, and the rear pilot.</p>
 
+    <div class="logbox" id="lastLog" hidden>
+      <strong id="lastLogTitle">Last trip log</strong>
+      <span class="note" id="lastLogInfo"></span>
+      <button id="saveLastLog" type="button">Save trip log</button>
+    </div>
+
     <div class="field">
       <span class="label">This phone is in the</span>
       <div class="roles" role="group" aria-label="Choose role">
@@ -118,7 +127,7 @@ code{font-size:14px;word-break:break-all}
     </div>
 
     <div class="field">
-      <label class="label" for="trip">Trip code (same on every phone)</label>
+      <label class="label" for="trip">Trip code (same on every phone, at least 6 letters or numbers)</label>
       <div class="row">
         <input id="trip" type="text" maxlength="12" autocomplete="off" spellcheck="false">
         <button id="newTrip" type="button">New code</button>
@@ -190,6 +199,7 @@ code{font-size:14px;word-break:break-all}
       </div>
       <label class="check"><input id="keepOn2" type="checkbox"> <span>Keep screen on (a little more battery)</span></label>
       <label class="check"><input id="forceOn2" type="checkbox"> <span>Force screen on, blank video (more battery)</span></label>
+      <button id="saveLog" type="button">Save trip log</button>
       <button id="changeRole" type="button">Change role</button>
       <p class="note">Version <span class="ver"></span></p>
       <video id="nosleep" muted playsinline loop hidden src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMrbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAAAAABAAAAAAHNbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAgABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABeG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAThzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAK/+EAFmdCwArZHsBEAAADAAQAAAMACDxImSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAApAAAAKQAAAABhzdHRzAAAAAAAAAAEAAAACAABAAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAACAAAAAQAAABxzdHN6AAAAAAAAAAAAAAACAAAChgAAAAoAAAAUc3RjbwAAAAAAAAABAAADWwAAAGJ1ZHRhAAAAWm1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALWlsc3QAAAAlqXRvbwAAAB1kYXRhAAAAAQAAAABMYXZmNjAuMTYuMTAwAAAACGZyZWUAAAKYbWRhdAAAAnAGBf//bNxF6b3m2Ui3lizYINkj7u94MjY0IC0gY29yZSAxNjQgcjMxMDggMzFlMTlmOSAtIEguMjY0L01QRUctNCBBVkMgY29kZWMgLSBDb3B5bGVmdCAyMDAzLTIwMjMgLSBodHRwOi8vd3d3LnZpZGVvbGFuLm9yZy94MjY0Lmh0bWwgLSBvcHRpb25zOiBjYWJhYz0wIHJlZj0zIGRlYmxvY2s9MTowOjAgYW5hbHlzZT0weDE6MHgxMTEgbWU9aGV4IHN1Ym1lPTcgcHN5PTEgcHN5X3JkPTEuMDA6MC4wMCBtaXhlZF9yZWY9MSBtZV9yYW5nZT0xNiBjaHJvbWFfbWU9MSB0cmVsbGlzPTEgOHg4ZGN0PTAgY3FtPTAgZGVhZHpvbmU9MjEsMTEgZmFzdF9wc2tpcD0xIGNocm9tYV9xcF9vZmZzZXQ9LTIgdGhyZWFkcz0xIGxvb2thaGVhZF90aHJlYWRzPTEgc2xpY2VkX3RocmVhZHM9MCBucj0wIGRlY2ltYXRlPTEgaW50ZXJsYWNlZD0wIGJsdXJheV9jb21wYXQ9MCBjb25zdHJhaW5lZF9pbnRyYT0wIGJmcmFtZXM9MCB3ZWlnaHRwPTAga2V5aW50PTI1MCBrZXlpbnRfbWluPTEgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAOZYiEBb///w9FAAFPf4AAAAAGQZo4CvqA"></video>
@@ -204,9 +214,12 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.1.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.2.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
-var TOPIC_BASE = "bhe-pilotgap/v1/";
+var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
+var MIN_CODE = 6;
+var LOG_MAX = 6000;           // trip log entries kept on the phone
+var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry continues the same log
 var STALE_MS = 15000;      // no update for 15 s = lost contact
 var ESTIMATE_MS = 120000;  // stop estimating 2 min after contact lost
 var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
@@ -236,9 +249,72 @@ var S = {
   audio:null, mutedUntil:0, lastBeep:0, lastSpeak:{}, wasStale:{},
   wake:null, keepOn: store.get("keepOn","0")==="1", force: store.get("forceOn","0")==="1",
   orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
-  simT0:0, timers:[], layoutKey:""
+  simT0:0, timers:[], layoutKey:"",
+  key:null, topicId:"", log:[], lastGapState:{}, lastSample:0, gpsQuiet:false, lastUnreadable:0
 };
 if(ROLES.indexOf(S.role)<0) S.role="";
+
+/* ---------- trip log (8a) ---------- */
+function loadLog(){ try{ var l=JSON.parse(store.get("lastlog","[]")); return Array.isArray(l)?l:[]; }catch(e){ return []; } }
+function saveLogLocal(){ try{ localStorage.setItem("pg_lastlog",JSON.stringify(S.log)); }catch(e){
+  try{ S.log=S.log.slice(-Math.floor(S.log.length/2)); localStorage.setItem("pg_lastlog",JSON.stringify(S.log)); }catch(e2){} } }
+function L(ev,msg){
+  S.log.push([Date.now(),ev,msg||""]);
+  if(S.log.length>LOG_MAX) S.log.splice(0,S.log.length-LOG_MAX);
+}
+function stamp(t){ var d=new Date(t); function z(n){return ("0"+n).slice(-2);} return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+" "+z(d.getHours())+":"+z(d.getMinutes())+":"+z(d.getSeconds()); }
+function logText(log){
+  var head="Pilot Gap trip log\nSaved "+stamp(Date.now())+" from version "+VERSION+"\nTimes are this phone's local time.\n\n";
+  return head+log.map(function(e){ return stamp(e[0])+"  "+(e[1]+"        ").slice(0,8)+"  "+e[2]; }).join("\n")+"\n";
+}
+function logFileName(log){
+  var t=log.length?log[log.length-1][0]:Date.now(), d=new Date(t);
+  function z(n){return ("0"+n).slice(-2);}
+  return "pilotgap-log-"+d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+"-"+z(d.getHours())+z(d.getMinutes())+"-"+(S.role||"phone")+".txt";
+}
+function saveLogFile(log){
+  if(!log.length) return;
+  var name=logFileName(log), text=logText(log);
+  function download(){
+    try{ var a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:"text/plain"})); a.download=name;
+      document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },2000); }catch(e){}
+  }
+  try{
+    var f=new File([text],name,{type:"text/plain"});
+    if(navigator.canShare && navigator.canShare({files:[f]})){ navigator.share({files:[f],title:name}).catch(function(e){ if(!e||e.name!=="AbortError") download(); }); return; }
+  }catch(e){}
+  download();
+}
+window.addEventListener("error",function(e){ L("error",(e&&e.message)||"script error"); });
+
+/* ---------- scrambling (8b): AES-GCM key and topic id from the trip code ---------- */
+var enc=new TextEncoder(), dec=new TextDecoder();
+function hex(buf){ return Array.prototype.map.call(new Uint8Array(buf),function(b){return ("0"+b.toString(16)).slice(-2);}).join(""); }
+function b64(bytes){ var s=""; for(var i=0;i<bytes.length;i++) s+=String.fromCharCode(bytes[i]); return btoa(s); }
+function unb64(t){ var s=atob(t), a=new Uint8Array(s.length); for(var i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; }
+function cryptoOk(){ return !!(window.crypto && crypto.subtle && window.isSecureContext!==false); }
+function deriveTrip(code){
+  return crypto.subtle.digest("SHA-256",enc.encode("bhe-pilotgap topic|"+code)).then(function(h){
+    S.topicId=hex(h).slice(0,24);
+    return crypto.subtle.importKey("raw",enc.encode(code),"PBKDF2",false,["deriveKey"]);
+  }).then(function(base){
+    return crypto.subtle.deriveKey({name:"PBKDF2",salt:enc.encode("bhe-pilotgap v2"),iterations:150000,hash:"SHA-256"},
+      base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+  }).then(function(k){ S.key=k; });
+}
+function seal(obj){
+  var iv=crypto.getRandomValues(new Uint8Array(12));
+  return crypto.subtle.encrypt({name:"AES-GCM",iv:iv},S.key,enc.encode(JSON.stringify(obj))).then(function(ct){
+    var out=new Uint8Array(12+ct.byteLength); out.set(iv,0); out.set(new Uint8Array(ct),12); return b64(out);
+  });
+}
+function unseal(txt){
+  try{
+    var a=unb64(txt); if(a.length<29) return Promise.resolve(null);
+    return crypto.subtle.decrypt({name:"AES-GCM",iv:a.slice(0,12)},S.key,a.slice(12))
+      .then(function(pt){ return JSON.parse(dec.decode(pt)); }).catch(function(){ return null; });
+  }catch(e){ return Promise.resolve(null); }
+}
 
 /* ---------- trip shape ---------- */
 function twoTrucks(){ return S.cfg.trucks===2 || S.role==="truck2" || !!S.peers.truck2; }
@@ -303,28 +379,35 @@ function gapInfo(aRole, bRole, range, now){
 }
 
 /* ---------- relay ---------- */
-function topic(role){ return TOPIC_BASE+S.trip+"/"+role; }
+function topic(role){ return TOPIC_BASE+S.topicId+"/"+role; }
 function connectRelay(){
   if(typeof mqtt==="undefined"){ S.netErr="Relay library did not load"; return; }
   var c = mqtt.connect(RELAY,{clientId:"pg_"+myId, keepalive:30, reconnectPeriod:3000, connectTimeout:10000, clean:true});
   S.client=c;
-  c.on("connect",function(){ S.connected=true; c.subscribe(TOPIC_BASE+S.trip+"/+",{qos:0}); publishCfg(); publishMine(true); });
-  c.on("close",function(){ S.connected=false; });
-  c.on("offline",function(){ S.connected=false; });
-  c.on("error",function(){ S.connected=false; });
+  c.on("connect",function(){ S.connected=true; L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
+  c.on("close",function(){ if(S.connected) L("relay","connection closed"); S.connected=false; });
+  c.on("offline",function(){ if(S.connected) L("relay","offline"); S.connected=false; });
+  c.on("reconnect",function(){ L("relay","trying to reconnect"); });
+  c.on("error",function(e){ L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
   c.on("message",function(t,payload){ onRelayMessage(t.split("/").pop(), payload.toString()); });
 }
 function onRelayMessage(role, txt){
+  if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
+  if(!txt){ if(role!=="cfg" && role!==S.role){ delete S.peers[role]; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
+  return unseal(txt).then(function(d){
+    if(!d){ if(Date.now()-S.lastUnreadable>60000){ S.lastUnreadable=Date.now(); L("relay","unreadable message ignored ("+role+")"); } return; }
+    handleMsg(role,d);
+  });
+}
+function handleMsg(role, d){
   if(role==="cfg"){
-    if(S.role==="truck" || !txt) return;          // Truck 1 owns the settings
-    var c; try{ c=JSON.parse(txt); }catch(e){ return; }
-    if(!validCfg(c) || typeof c.t!=="number") return;
-    S.cfg={trucks:c.trucks, ranges:c.ranges}; S.cfgFrom="truck1"; S.cfgT=c.t;
+    if(S.role==="truck") return;                  // Truck 1 owns the settings
+    if(!validCfg(d) || typeof d.t!=="number"){ L("cfg","bad gap settings ignored"); return; }
+    var changed = JSON.stringify(S.cfg)!==JSON.stringify({trucks:d.trucks, ranges:d.ranges});
+    S.cfg={trucks:d.trucks, ranges:d.ranges}; S.cfgFrom="truck1"; S.cfgT=d.t;
+    if(changed) L("cfg","from Truck 1: "+cfgText(S.cfg));
     return;
   }
-  if(ROLES.indexOf(role)<0) return;
-  if(!txt){ if(role!==S.role) delete S.peers[role]; return; }
-  var d; try{ d=JSON.parse(txt); }catch(e){ return; }
   if(typeof d.lat!=="number"||typeof d.lon!=="number"||typeof d.t!=="number") return;
   if(Math.abs(d.lat)>90||Math.abs(d.lon)>180) return;
   if(role===S.role){
@@ -341,13 +424,16 @@ function publishMine(force){
   if(now-f.time>30000) return;             // GPS has gone quiet: stop claiming a fresh position
   S.lastPub=now;
   var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:now};
-  S.client.publish(topic(S.role),JSON.stringify(msg),{qos:0,retain:true});
+  var c=S.client, tp=topic(S.role);
+  seal(msg).then(function(x){ if(c===S.client && S.connected) c.publish(tp,x,{qos:0,retain:true}); });
 }
 function publishCfg(){
   if(S.role!=="truck"||!S.client||!S.connected) return;
   var msg={id:myId,trucks:S.cfg.trucks,ranges:S.cfg.ranges,t:Date.now()};
-  S.client.publish(topic("cfg"),JSON.stringify(msg),{qos:0,retain:true});
+  var c=S.client, tp=topic("cfg");
+  seal(msg).then(function(x){ if(c===S.client && S.connected) c.publish(tp,x,{qos:0,retain:true}); });
 }
+function cfgText(c){ return "front "+fmtRange(c.ranges.front)+(c.trucks===2?", between trucks "+fmtRange(c.ranges.mid):"")+", rear "+fmtRange(c.ranges.rear)+", "+c.trucks+" truck"+(c.trucks===2?"s":""); }
 
 /* ---------- GPS ---------- */
 function onFix(p){
@@ -360,11 +446,13 @@ function onFix(p){
     if(fix.spd==null && dt>0.5) fix.spd=d/dt;
     if(fix.hdg==null) fix.hdg = d>5 ? bearing(prev,fix) : prev.hdg;
   }
+  if(!prev) L("gps","first fix, accuracy "+Math.round(fix.acc)+" m");
   S.lastFix=fix; S.gpsError="";
   S.peers[S.role]={lat:fix.lat,lon:fix.lon,spd:fix.spd,hdg:fix.hdg,acc:fix.acc,t:now};
   publishMine(false);
 }
 function onGpsErr(e){
+  L("gps","error "+e.code+": "+(e.message||""));
   S.gpsError = e.code===1 ? "Location blocked. Allow location for this page in the browser settings." :
                e.code===3 ? "Waiting for GPS…" : "GPS unavailable";
 }
@@ -406,11 +494,19 @@ function beep(freq,dur,when){
 function say(key,text,every){
   var now=Date.now();
   if(S.lastSpeak[key] && now-S.lastSpeak[key]<every) return;
-  S.lastSpeak[key]=now;
+  S.lastSpeak[key]=now; L("alarm","spoke: "+text);
   try{ if("speechSynthesis" in window){ var u=new SpeechSynthesisUtterance(text); u.lang="en-AU"; u.rate=1.05; speechSynthesis.speak(u); } }catch(e){}
 }
 function alarms(results,now){
-  if(now<S.mutedUntil) return;
+  var muted = now<S.mutedUntil;
+  chain().forEach(function(r){
+    if(r===S.role) return;
+    var p=S.peers[r]; var stale = p && now-p.t>STALE_MS;
+    if(stale && !S.wasStale[r]){ L("peer","lost contact with "+nm(r)); if(!muted){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),60000); } }
+    if(!stale && S.wasStale[r] && p) L("peer",nm(r)+" back");
+    S.wasStale[r]=!!stale;
+  });
+  if(muted) return;
   var bad=false;
   results.forEach(function(x){
     var g=x.info;
@@ -420,15 +516,9 @@ function alarms(results,now){
     }
   });
   if(bad && now-S.lastBeep>5000){
-    S.lastBeep=now; beep(1150,0.18,0); beep(1150,0.18,0.28);
+    S.lastBeep=now; beep(1150,0.18,0); beep(1150,0.18,0.28); L("alarm","beep");
     try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
   }
-  chain().forEach(function(r){
-    if(r===S.role) return;
-    var p=S.peers[r]; var stale = p && now-p.t>STALE_MS;
-    if(stale && !S.wasStale[r]){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),60000); }
-    S.wasStale[r]=!!stale;
-  });
 }
 
 /* ---------- role order check (uses Truck 1's direction of travel) ---------- */
@@ -495,7 +585,25 @@ function render(){
   var now=Date.now();
   var gaps=ensureLayout();
   var results=gaps.map(function(g){ return {gap:g, info:gapInfo(g.a,g.b,S.cfg.ranges[g.key],now)}; });
-  results.forEach(function(x){ setGap(x.gap,x.info); });
+  results.forEach(function(x){
+    setGap(x.gap,x.info);
+    var k=x.gap.key, st=x.info.state, prev=S.lastGapState[k];
+    if(st!==prev){
+      S.lastGapState[k]=st;
+      L("gap",GAPNAME[k]+": "+(prev||"start")+" -> "+st+(x.info.value!=null?" at "+Math.round(x.info.value)+" m":"")+(x.info.est!=null?" (est. "+Math.round(x.info.est)+" m)":"")+(st==="none"?" (waiting for "+nm(x.info.missing)+")":""));
+    }
+  });
+  if(now-S.lastSample>=30000){
+    S.lastSample=now;
+    var me=S.peers[S.role];
+    L("sample",results.map(function(x){ return x.gap.key+"="+(x.info.value!=null?Math.round(x.info.value)+"m/"+x.info.state:x.info.state); }).join(" ")+
+      " | me "+(me?kmh(me.spd)+" ±"+Math.round(me.acc||0)+"m":"no fix")+
+      " | ages "+chain().filter(function(r){return r!==S.role;}).map(function(r){ var p=S.peers[r]; return SHORT[r].replace(" ","")+"="+(p?Math.round((now-p.t)/1000)+"s":"-"); }).join(" "));
+  }
+  if(!S.practice){
+    var quiet = !S.lastFix || now-S.lastFix.time>15000;
+    if(quiet!==S.gpsQuiet && (S.lastFix || now-S.tripStart>30000)){ S.gpsQuiet=quiet; L("gps",quiet?"no GPS fix for 15 s":"GPS back"); }
+  }
   chain().forEach(function(r){
     var p=S.peers[r], el=$("spd_"+r); if(!el) return;
     el.textContent = p ? kmh(p.spd) : "–";
@@ -522,9 +630,12 @@ function render(){
   var b=[];
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
   if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
+  if(S.cryptoErr) b.push({text:S.cryptoErr});
   if(!S.practice && S.role!=="truck" && S.cfgFrom==="default" && S.connected) b.push({text:"Using default gaps until Truck 1 connects."});
+  if(now-S.dupRoleSeen<STALE_MS){ if(!S.dupLogged){ S.dupLogged=true; L("role","another phone is also "+nm(S.role)); } } else S.dupLogged=false;
   if(now-S.dupRoleSeen<STALE_MS) b.push({text:"Another phone is also set as "+nm(S.role)+". Check each phone's role.",change:true});
-  if(orderCheck(now)) b.push({text:"The vehicle order looks wrong. Are you still the "+nm(S.role).toLowerCase()+"?",confirm:true,change:true});
+  var ord=orderCheck(now); if(ord && !S.ordLogged){ S.ordLogged=true; L("role","order check shown"); } if(!ord) S.ordLogged=false;
+  if(ord) b.push({text:"The vehicle order looks wrong. Are you still the "+nm(S.role).toLowerCase()+"?",confirm:true,change:true});
   var muted=now<S.mutedUntil, left=Math.ceil((S.mutedUntil-now)/1000);
   var mm=Math.floor(left/60)+":"+("0"+(left%60)).slice(-2);
   $("mute").textContent = muted ? "Unmute ("+mm+")" : "Mute 5 min";
@@ -539,7 +650,7 @@ function render(){
       if(x.confirm||x.change){
         var row=document.createElement("div"); row.className="row";
         if(x.confirm){ var y=document.createElement("button"); y.type="button"; y.textContent="Yes, still "+nm(S.role).toLowerCase();
-          y.onclick=function(){ S.orderSnoozeUntil=Date.now()+600000; S.orderBadSince=0; render(); }; row.appendChild(y); }
+          y.onclick=function(){ L("role","driver confirmed role"); S.orderSnoozeUntil=Date.now()+600000; S.orderBadSince=0; render(); }; row.appendChild(y); }
         var c=document.createElement("button"); c.type="button"; c.textContent="Change role"; c.onclick=goSetup; row.appendChild(c);
         d.appendChild(row);
       }
@@ -547,6 +658,7 @@ function render(){
     });
   }
   alarms(results,now);
+  if(now-(S.lastPersist||0)>10000){ S.lastPersist=now; saveLogLocal(); }
 }
 
 /* ---------- range inputs (pre = "s_" setup screen, "l_" live settings) ---------- */
@@ -591,9 +703,9 @@ function wakeLock(){
   S.wakeTried=Date.now(); S.wakePending=true;
   try{
     navigator.wakeLock.request("screen").then(function(l){
-      S.wakePending=false; S.wake=l;
-      l.addEventListener("release",function(){ S.wake=null; S.wakeTried=0; if(S.keepOn) setTimeout(wakeLock,1000); });
-    }).catch(function(){ S.wakePending=false; });
+      S.wakePending=false; S.wake=l; L("screen","keep-awake granted");
+      l.addEventListener("release",function(){ L("screen","keep-awake released"); S.wake=null; S.wakeTried=0; if(S.keepOn) setTimeout(wakeLock,1000); });
+    }).catch(function(e){ S.wakePending=false; L("screen","keep-awake refused: "+((e&&e.name)||"")); });
   }catch(e){ S.wakePending=false; }
 }
 function wakeOff(){
@@ -601,6 +713,7 @@ function wakeOff(){
   try{ $("nosleep").pause(); }catch(e){}
 }
 function setScreen(keep,force){
+  if(keep!==S.keepOn||force!==S.force) L("screen","keep screen on "+(keep?"on":"off")+", force "+(force?"on":"off"));
   S.keepOn=keep; S.force=force; S.wakeTried=0;
   store.set("keepOn",keep?"1":"0"); store.set("forceOn",force?"1":"0");
   $("keepOn").checked=keep; $("keepOn2").checked=keep; $("forceOn").checked=force; $("forceOn2").checked=force;
@@ -613,7 +726,8 @@ function start(){
   var code=$("trip").value.trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
   var practice=$("practice").checked;
   if(!S.role){ err.textContent="Choose this phone's role first."; err.hidden=false; return; }
-  if(code.length<4 && !practice){ err.textContent="Enter a trip code of at least 4 letters or numbers."; err.hidden=false; return; }
+  if(code.length<MIN_CODE && !practice){ err.textContent="Enter a trip code of at least "+MIN_CODE+" letters or numbers, or tap New code."; err.hidden=false; return; }
+  if(!practice && !cryptoOk()){ err.textContent="This browser can't scramble messages. Open the page from https://bedfordharbour.github.io/pilot-gap/"; err.hidden=false; return; }
   if(S.role==="truck" || practice){
     var c=readRanges("s_");
     if(!c){ err.textContent="Each gap needs a minimum smaller than its maximum."; err.hidden=false; return; }
@@ -621,13 +735,21 @@ function start(){
     S.cfg=clone(c); S.cfgFrom = S.role==="truck" ? "self" : "practice";
   } else { S.cfg=clone(DEFAULT_CFG); S.cfgFrom="default"; S.cfgT=0; }
   S.trip=code||"PRACTICE"; S.practice=practice;
-  store.set("role",S.role); store.set("trip",S.trip);
+  store.set("role",S.role); if(!practice) store.set("trip",S.trip);
   try{ history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
   S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
+  S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
+  var old=loadLog(); S.log = (old.length && Date.now()-old[old.length-1][0]<LOG_JOIN_MS) ? old : [];
+  L("start","version "+VERSION+", role "+nm(S.role)+(S.practice?", PRACTICE":"")+", gaps "+cfgText(S.cfg)+(S.role==="truck"?" (set here)":" (defaults until Truck 1 connects)"));
+  L("start","screen: keep on "+(S.keepOn?"on":"off")+", force "+(S.force?"on":"off")+" | "+navigator.userAgent);
   if(S.practice){ S.simT0=Date.now(); }
-  else { startGps(); connectRelay(); }
+  else {
+    startGps();
+    deriveTrip(S.trip).then(function(){ if(!$("run").hidden) connectRelay(); })
+      .catch(function(e){ S.cryptoErr="Could not set up scrambling: "+((e&&e.message)||e); L("error",S.cryptoErr); });
+  }
   S.timers.push(setInterval(render,1000));
   S.timers.push(setInterval(function(){ publishMine(true); publishCfg(); },10000));
   $("shareLink").textContent=shareUrl();
@@ -647,7 +769,14 @@ function teardown(clearMine){
   S.connected=false; S.lastFix=null;
   wakeOff();
 }
-function goSetup(){ teardown(false); $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); }
+function goSetup(){ L("end","role change"); saveLogLocal(); teardown(false); $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
+function showLastLog(justEnded){
+  var l=loadLog(), box=$("lastLog");
+  if(!l.length){ box.hidden=true; return; }
+  box.hidden=false; box.classList.toggle("ended",!!justEnded);
+  $("lastLogTitle").textContent = justEnded ? "Trip ended. Save the trip log so any faults can be checked." : "Last trip log";
+  $("lastLogInfo").textContent = stamp(l[0][0]).slice(0,16)+" to "+stamp(l[l.length-1][0]).slice(11,16)+", "+l.length+" entries";
+}
 
 /* ---------- wiring ---------- */
 Array.prototype.forEach.call(document.querySelectorAll(".role"),function(b){ b.addEventListener("click",function(){ pickRole(b.dataset.role); }); });
@@ -655,8 +784,8 @@ $("practice").addEventListener("change",function(){ pickRole(S.role); });
 $("newTrip").addEventListener("click",function(){ $("trip").value=randCode(); });
 $("start").addEventListener("click",start);
 $("mute").addEventListener("click",function(){
-  if(Date.now()<S.mutedUntil){ S.mutedUntil=0; }
-  else { S.mutedUntil=Date.now()+300000; try{ speechSynthesis.cancel(); }catch(e){} }
+  if(Date.now()<S.mutedUntil){ S.mutedUntil=0; L("alarm","unmuted"); }
+  else { S.mutedUntil=Date.now()+300000; L("alarm","muted for 5 min"); try{ speechSynthesis.cancel(); }catch(e){} }
   render();
 });
 $("toggleSettings").addEventListener("click",function(){
@@ -665,7 +794,9 @@ $("toggleSettings").addEventListener("click",function(){
   if(!p.hidden){ renderRangePanel(); try{ p.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ p.scrollIntoView(); } }
   else { try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){ window.scrollTo(0,0); } }
 });
-$("stop").addEventListener("click",function(){ teardown(true); $("run").hidden=true; $("setup").hidden=false; });
+$("stop").addEventListener("click",function(){ L("end","End trip pressed"); saveLogLocal(); teardown(true); $("run").hidden=true; $("setup").hidden=false; showLastLog(true); try{ window.scrollTo(0,0); }catch(e){} });
+$("saveLog").addEventListener("click",function(){ L("log","saved during trip"); saveLogLocal(); saveLogFile(S.log); });
+$("saveLastLog").addEventListener("click",function(){ saveLogFile(loadLog()); });
 $("changeRole").addEventListener("click",goSetup);
 $("keepOn2").addEventListener("change",function(){ setScreen($("keepOn2").checked,S.force); });
 $("forceOn2").addEventListener("change",function(){ setScreen(S.keepOn,$("forceOn2").checked); });
@@ -674,7 +805,7 @@ $("s_two").addEventListener("change",function(){ $("s_midRow").hidden=!$("s_two"
   $(id).addEventListener("change",function(){
     $("l_midRow").hidden=!$("l_two").checked;
     var c=readRanges("l_"); if(!c) return;
-    S.cfg=clone(c); if(S.role==="truck"){ saveMyCfg(c); publishCfg(); }
+    S.cfg=clone(c); L("cfg","changed here: "+cfgText(c)); if(S.role==="truck"){ saveMyCfg(c); publishCfg(); }
     S.layoutKey=""; render();
   });
 });
@@ -684,16 +815,22 @@ $("copyLink").addEventListener("click",function(){
   try{ navigator.clipboard.writeText(u).then(done,function(){ selectLink(); }); }catch(e){ selectLink(); }
 });
 function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($("shareLink")); var s=getSelection(); s.removeAllRanges(); s.addRange(r); $("copied").textContent="Selected, copy it now"; }catch(e){} }
-document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible" && !$("run").hidden){ S.wakeTried=0; wakeLock(); videoCheck(); } });
+document.addEventListener("visibilitychange",function(){
+  if($("run").hidden) return;
+  if(document.visibilityState==="visible"){ L("phone","back on this page"); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
+  else { L("phone","switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
+});
+window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });
 
 var q=new URLSearchParams(location.search);
-$("trip").value=(q.get("trip")||"1234").toUpperCase();
+$("trip").value=(q.get("trip")||"123456").toUpperCase();   // 123456 is the default for testing (Ryan, 18 Oct); New code for privacy
 Array.prototype.forEach.call(document.querySelectorAll(".ver"),function(e){ e.textContent=VERSION; });
 fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
 pickRole(S.role);
+showLastLog(false);
 
-window.__pg={gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage};
+window.__pg={gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
 })();
 </script>
 </body>

@@ -2,6 +2,15 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.2.0 — 18 Oct 2026
+
+- **Trip log on each phone.** Records relay connects and drops, GPS errors and dropouts, each gap going in or out of range (with distance), lost and regained contact, alarms, mute, gap settings, the phone switching away (another app, call, screen locked), keep-awake, script errors, and a sample of all gaps every 30 s. Kept on the phone (up to 6,000 entries; a new trip within 6 h continues the same log).
+- **Save trip log**: offered on the start screen after End trip, kept there after closing the page, and in Settings during a trip. Uses the phone's share screen (for example to Dropbox) where it can, otherwise downloads a .txt file.
+- **Messages scrambled with the trip code** (AES-GCM, key from the code). The relay channel name is a hash of the code, so the code is never sent. Phones without the code see only scrambled text. Plain or wrongly scrambled messages are ignored and logged.
+- Trip codes must be at least 6 letters or numbers. **Default code 123456** for testing where privacy does not matter; New code for real trips.
+- **Not compatible with 1.0–1.1 phones**: they use the old channel and will not see 1.2 phones. Check the version at the bottom of the start screen on every phone.
+- Smoke test extended to 41 checks.
+
 ## 1.1.0 — 18 Oct 2026
 
 - Second truck: new role **Truck 2**. With two trucks there are three gaps: front (lead pilot to Truck 1), between trucks (Truck 1 to Truck 2), and rear (last truck to rear pilot).
