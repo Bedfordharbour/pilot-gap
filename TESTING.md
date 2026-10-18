@@ -55,4 +55,5 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - iPhones do not vibrate from a web page; they get beeps and voice only.
 - Sound needs a tap first (the Start button does this). If a phone was locked and reopened, tap the screen once.
 - The phone keeps a copy of the page for up to 10 minutes after a push; add `?v=<anything>` to the address to get the new one.
-- If the screen locks or the browser goes to the background, that phone stops sending its position.
+- If the screen locks or the browser goes to the background, that phone stops sending its position, and its relay connection drops until the driver comes back to the page (seen in the first uploaded log, 18 Oct).
+- The public relay can take about 10 s to accept the first connection ("connack timeout" in the log).

@@ -48,9 +48,9 @@ Ryan's decisions (20:18):
 - **2a: update check**, built. Never reloads by itself, so a driver is not dropped mid-trip; the banner says to update when stopped.
 - **4a declined:** no 6-character minimum for trip codes during testing; back to 4. **To do: ask again once the design is out of testing.**
 - **4b approved:** a new trip within 6 h continues the same log. **4c approved:** Save trip log on the start screen after End trip and in Settings.
-- **4d (no positions in the log): Ryan asked why.** Open; see the reply of 20:37. Positions were left out by Claude for privacy (a location record of drivers); not Ryan's decision.
-- **Where logs go:** Ryan asked whether logs can come straight to him or be kept somewhere other than the phone. Open.
-- **3 (old unscrambled positions on the relay under code 1234):** not answered yet.
+- **4d (no positions in the log): Ryan asked why.** Positions were left out by Claude for privacy (a location record of drivers); not Ryan's decision. *Resolved 20:45: 2a, positions in (see v1.4.0).*
+- **Where logs go:** Ryan asked whether logs can come straight to him or be kept somewhere other than the phone. *Resolved 20:45: 1b, automatic upload to Google Drive (see v1.4.0).*
+- **3 (old unscrambled positions on the relay under code 1234):** *Resolved 20:45: 3b, leave them.*
 
 ### Decisions (v1.4.0, 20:45)
 
@@ -58,6 +58,14 @@ Ryan's decisions (20:18):
 - **2a: positions in the log**, on every line during a trip (own position only; every phone sends its own log).
 - **Location agreement** (Ryan: "a simple I agree to share my location as part of my piloting / driver duties"). Claude's details, for Ryan to confirm: asked once per phone with the driver's name, again if the wording changes; recorded in every log; practice mode exempt. Not legal advice; Ryan may want it checked or added to employment paperwork.
 - **3b:** old unscrambled test positions on the relay left as they are.
+
+### v1.4.1–1.4.2 and first real upload (21:36–21:48)
+
+- Ryan deployed `server/upload-log.gs` as a Google Apps Script web app (21:36); `UPLOAD_URL` set in 1.4.1. The workspace cannot reach script.google.com (Google redirects to a blocked host), so checking is done through Ryan's Google Drive connection instead.
+- **Upload confirmed working (21:41).** File `pilotgap-20261018-2109-truck-Dave-unw5l7.txt` in Google Drive folder **Pilot Gap logs** (Drive folder id `1dx-TD0nYeElQhzOfo-xgLd9wQ1tx_hAx`). First copy 21:39 (the 21:14 trip that had been waiting from before the upload was switched on — retry path works), second at End trip 21:40.
+- **Two phones confirmed through the scrambled relay** (same log): front gap 14 m with phones together (21:13, "too close" spoken), 5,681 m with the lead pilot elsewhere (21:40, "too far" spoken).
+- Seen in the log: the relay drops whenever the phone leaves the page and reconnects within seconds of returning; first connection twice took ~10 s ("connack timeout", public relay slow to answer). Watch on the trial.
+- Wording "waiting for Truck 1" shown on Truck 1's own phone before its GPS fix; change to "waiting for GPS on this phone" proposed, **Ryan: not now**.
 
 ### Faults found
 
@@ -69,6 +77,8 @@ Ryan's decisions (20:18):
 
 ### Not yet tested in the field
 
-- Real GPS on a moving vehicle; three phones at 500–2000 m apart; behaviour in dead spots.
+- Real GPS on a moving vehicle; three or four phones at working distances; behaviour in dead spots.
+- The 10-minute upload during a trip (both test trips were under 10 minutes).
+- Done on 18 Oct: two phones through the scrambled relay, automatic upload at End trip and on page open.
 - Keep screen on with a real phone (the desktop test browser refused the wake lock); Force screen on worked in the test browser.
 - Speech and beeps on iPhone and Android in a cab.
