@@ -78,11 +78,13 @@ button:focus-visible,.role:focus-visible,input:focus-visible{outline:3px solid v
 .gap.bad .num{animation:pulse 1s steps(2,end) infinite}
 @media (prefers-reduced-motion:reduce){.gap.bad .num{animation:none}}
 @keyframes pulse{50%{opacity:.55}}
-.vehicle{text-align:center;font:700 15px/1 var(--display);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.vehicle{display:flex;align-items:center;justify-content:center;gap:10px;font:700 30px/1 var(--display);text-transform:uppercase;letter-spacing:.08em;color:var(--fg)}
+.vehicle svg{width:52px;height:auto;flex:none}
 .speeds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;font-variant-numeric:tabular-nums}
 .speeds div{background:var(--panel);border:1.5px solid var(--line);border-radius:8px;padding:6px 8px}
 .speeds b{display:block;font:700 22px/1.1 var(--display)}
 .speeds span{font-size:12px;color:var(--muted)}
+#mute[aria-pressed="true"]{background:var(--warn-bg);color:var(--warn);border-color:var(--warn)}
 .actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .panel{background:var(--panel);border:1.5px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:12px}
 code{font-size:14px;word-break:break-all}
@@ -152,7 +154,7 @@ code{font-size:14px;word-break:break-all}
       <div class="num" id="gapANum">–</div>
       <div class="sub" id="gapASub">Waiting for both vehicles</div>
     </div>
-    <div class="vehicle" id="truckMark">Truck</div>
+    <div class="vehicle" id="truckMark"><svg viewBox="0 0 64 36" aria-hidden="true"><path fill="currentColor" d="M2 4h36v22H2z"/><path fill="currentColor" d="M40 10h12l8 9v7H40z"/><path fill="var(--bg)" d="M44 13h7l5 6H44z"/><circle cx="12" cy="29" r="5" fill="currentColor"/><circle cx="12" cy="29" r="2" fill="var(--bg)"/><circle cx="50" cy="29" r="5" fill="currentColor"/><circle cx="50" cy="29" r="2" fill="var(--bg)"/><path fill="var(--accent)" d="M6 8h28v4H6z"/></svg><span>Truck</span></div>
     <div class="gap none" id="gapB">
       <div class="who"><span id="gapBWho">Rear pilot behind</span><span id="gapBRange"></span></div>
       <div class="num" id="gapBNum">–</div>
@@ -166,7 +168,7 @@ code{font-size:14px;word-break:break-all}
     </div>
 
     <div class="actions">
-      <button id="mute" type="button">Mute 1 min</button>
+      <button id="mute" type="button" aria-pressed="false">Mute 5 min</button>
       <button id="toggleSettings" type="button">Settings</button>
       <button id="stop" type="button">End trip</button>
     </div>
@@ -451,7 +453,11 @@ function render(){
   if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
   if(now-S.dupRoleSeen<STALE_MS) b.push({text:"Another phone is also set as "+ROLE_NAMES[S.role]+". Check each phone's role.",change:true});
   if(orderCheck(now)) b.push({text:"The vehicle order looks wrong. Are you still the "+ROLE_NAMES[S.role].toLowerCase()+"?",confirm:true,change:true});
-  if(now<S.mutedUntil) b.push({text:"Alarms muted for "+Math.ceil((S.mutedUntil-now)/1000)+" s"});
+  var muted=now<S.mutedUntil, left=Math.ceil((S.mutedUntil-now)/1000);
+  var mm=Math.floor(left/60)+":"+("0"+(left%60)).slice(-2);
+  $("mute").textContent = muted ? "Unmute ("+mm+")" : "Mute 5 min";
+  $("mute").setAttribute("aria-pressed", String(muted));
+  if(muted) b.push({text:"Alarms muted. Back on in "+Math.ceil(left/60)+" min"});
   var host=$("banners"), key=JSON.stringify(b);
   if(host.dataset.key!==key){
     host.dataset.key=key; host.innerHTML="";
@@ -533,7 +539,7 @@ function start(){
   else { startGps(); connectRelay(); }
   S.timers.push(setInterval(render,1000));
   S.timers.push(setInterval(function(){ publishMine(true); },10000));
-  $("myRole").textContent=ROLE_NAMES[S.role]; $("truckMark").textContent="Truck";
+  $("myRole").textContent=ROLE_NAMES[S.role]; 
   $("shareLink").textContent=shareUrl();
   $("minGap2").value=S.minGap; $("maxGap2").value=S.maxGap;
   $("setup").hidden=true; $("run").hidden=false; $("settings").hidden=true; $("toggleSettings").textContent="Settings";
@@ -557,7 +563,11 @@ function goSetup(){ teardown(false); $("run").hidden=true; $("setup").hidden=fal
 Array.prototype.forEach.call(document.querySelectorAll(".role"),function(b){ b.addEventListener("click",function(){ pickRole(b.dataset.role); }); });
 $("newTrip").addEventListener("click",function(){ $("trip").value=randCode(); });
 $("start").addEventListener("click",start);
-$("mute").addEventListener("click",function(){ S.mutedUntil=Date.now()+60000; try{ speechSynthesis.cancel(); }catch(e){} render(); });
+$("mute").addEventListener("click",function(){
+  if(Date.now()<S.mutedUntil){ S.mutedUntil=0; }
+  else { S.mutedUntil=Date.now()+300000; try{ speechSynthesis.cancel(); }catch(e){} }
+  render();
+});
 $("toggleSettings").addEventListener("click",function(){
   var p=$("settings"); p.hidden=!p.hidden;
   $("toggleSettings").textContent = p.hidden ? "Settings" : "Close settings";
