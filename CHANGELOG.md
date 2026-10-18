@@ -2,6 +2,10 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.4.2 — 18 Oct 2026
+
+- The browser is told not to refill the gap boxes and tick boxes after a refresh (`autocomplete="off"`), so old values or a Practice mode tick can't come back on their own. Precaution after the 500–2000 m truck gap found on phone unw5l7 (cause not found; see DEVLOG).
+
 ## 1.4.1 — 18 Oct 2026
 
 - Automatic log upload switched on: `UPLOAD_URL` set to Ryan's Google Apps Script web app (deployed 18 Oct 21:36). Logs land in the **Pilot Gap logs** folder in Ryan's Google Drive.

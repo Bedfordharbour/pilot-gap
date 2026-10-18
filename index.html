@@ -146,18 +146,18 @@ code{font-size:14px;word-break:break-all}
     <div class="field" id="setupRanges">
       <span class="label">Required gaps for this trip</span>
       <div class="ranges">
-        <div class="rrow"><span>Front</span><input id="s_fmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap minimum in metres"><span>to</span><input id="s_fmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap maximum in metres"><span>m</span></div>
-        <label class="check"><input id="s_two" type="checkbox"> <span>Second truck on this trip</span></label>
-        <div class="rrow" id="s_midRow"><span>Between trucks</span><input id="s_mmin" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks minimum in metres"><span>to</span><input id="s_mmax" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks maximum in metres"><span>m</span></div>
-        <div class="rrow"><span>Rear</span><input id="s_rmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap minimum in metres"><span>to</span><input id="s_rmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap maximum in metres"><span>m</span></div>
+        <div class="rrow"><span>Front</span><input id="s_fmin" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Front gap minimum in metres"><span>to</span><input id="s_fmax" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Front gap maximum in metres"><span>m</span></div>
+        <label class="check"><input id="s_two" type="checkbox" autocomplete="off"> <span>Second truck on this trip</span></label>
+        <div class="rrow" id="s_midRow"><span>Between trucks</span><input id="s_mmin" type="number" autocomplete="off" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks minimum in metres"><span>to</span><input id="s_mmax" type="number" autocomplete="off" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks maximum in metres"><span>m</span></div>
+        <div class="rrow"><span>Rear</span><input id="s_rmin" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Rear gap minimum in metres"><span>to</span><input id="s_rmax" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Rear gap maximum in metres"><span>m</span></div>
       </div>
     </div>
     <p class="note" id="setupRangeNote">Truck 1 sets the gaps for the trip. This phone uses them as soon as Truck 1 connects.</p>
 
-    <label class="check"><input id="practice" type="checkbox"> <span>Practice mode: pretend vehicles, no GPS or other phones needed. Use this to try the screen at home.</span></label>
+    <label class="check"><input id="practice" type="checkbox" autocomplete="off"> <span>Practice mode: pretend vehicles, no GPS or other phones needed. Use this to try the screen at home.</span></label>
 
-    <label class="check"><input id="keepOn" type="checkbox"> <span>Keep screen on. Asks the phone to stay awake. Uses a little more battery. Not needed if the phone's own auto-lock is set to Never.</span></label>
-    <label class="check"><input id="forceOn" type="checkbox"> <span>Force screen on. Plays a blank video on a loop to stop the phone locking. Uses more battery. Only use it if the screen still locks with the first option.</span></label>
+    <label class="check"><input id="keepOn" type="checkbox" autocomplete="off"> <span>Keep screen on. Asks the phone to stay awake. Uses a little more battery. Not needed if the phone's own auto-lock is set to Never.</span></label>
+    <label class="check"><input id="forceOn" type="checkbox" autocomplete="off"> <span>Force screen on. Plays a blank video on a loop to stop the phone locking. Uses more battery. Only use it if the screen still locks with the first option.</span></label>
 
     <p id="setupErr" class="err" hidden></p>
     <button id="start" class="primary" type="button">Start</button>
@@ -214,10 +214,10 @@ code{font-size:14px;word-break:break-all}
       <div class="field">
         <span class="label">Required gaps for this trip</span>
         <div id="liveEdit"><div class="ranges">
-        <div class="rrow"><span>Front</span><input id="l_fmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap minimum in metres"><span>to</span><input id="l_fmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Front gap maximum in metres"><span>m</span></div>
-        <label class="check"><input id="l_two" type="checkbox"> <span>Second truck on this trip</span></label>
-        <div class="rrow" id="l_midRow"><span>Between trucks</span><input id="l_mmin" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks minimum in metres"><span>to</span><input id="l_mmax" type="number" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks maximum in metres"><span>m</span></div>
-        <div class="rrow"><span>Rear</span><input id="l_rmin" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap minimum in metres"><span>to</span><input id="l_rmax" type="number" inputmode="numeric" min="0" step="50" aria-label="Rear gap maximum in metres"><span>m</span></div>
+        <div class="rrow"><span>Front</span><input id="l_fmin" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Front gap minimum in metres"><span>to</span><input id="l_fmax" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Front gap maximum in metres"><span>m</span></div>
+        <label class="check"><input id="l_two" type="checkbox" autocomplete="off"> <span>Second truck on this trip</span></label>
+        <div class="rrow" id="l_midRow"><span>Between trucks</span><input id="l_mmin" type="number" autocomplete="off" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks minimum in metres"><span>to</span><input id="l_mmax" type="number" autocomplete="off" inputmode="numeric" min="0" step="10" aria-label="Gap between trucks maximum in metres"><span>m</span></div>
+        <div class="rrow"><span>Rear</span><input id="l_rmin" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Rear gap minimum in metres"><span>to</span><input id="l_rmax" type="number" autocomplete="off" inputmode="numeric" min="0" step="50" aria-label="Rear gap maximum in metres"><span>m</span></div>
       </div></div>
         <div id="liveView" class="rview"></div>
         <span class="note" id="liveSrc"></span>
@@ -226,8 +226,8 @@ code{font-size:14px;word-break:break-all}
         <span class="label">Trip log</span>
         <span class="note" id="upStatus"></span>
       </div>
-      <label class="check"><input id="keepOn2" type="checkbox"> <span>Keep screen on (a little more battery)</span></label>
-      <label class="check"><input id="forceOn2" type="checkbox"> <span>Force screen on, blank video (more battery)</span></label>
+      <label class="check"><input id="keepOn2" type="checkbox" autocomplete="off"> <span>Keep screen on (a little more battery)</span></label>
+      <label class="check"><input id="forceOn2" type="checkbox" autocomplete="off"> <span>Force screen on, blank video (more battery)</span></label>
       <button id="saveLog" type="button">Save trip log</button>
       <button id="changeRole" type="button">Change role</button>
       <p class="note">Version <span class="ver"></span></p>
@@ -243,7 +243,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.4.1 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.4.2 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
