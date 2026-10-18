@@ -9,6 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
@@ -34,6 +37,40 @@ public class TripService extends Service implements LocationListener {
     final Handler handler = new Handler(Looper.getMainLooper());
     long lastFixAt, lastGpsAt;
     int missedTicks;
+    int gpsFixes, netFixes, ticks;
+    ConnectivityManager.NetworkCallback netCb;
+    static final long DIAG_MS = 60000;
+
+    /** Once a minute: what the phone is doing, written to the trip log (Ryan, 19 Oct: more diagnostics). */
+    final Runnable diag = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            long now = System.currentTimeMillis();
+            sendEvent("diag: last minute " + gpsFixes + " GPS fixes, " + netFixes + " network fixes, " + ticks + " ticks"
+                + "; last GPS " + (lastGpsAt == 0 ? "never" : ((now - lastGpsAt) / 1000) + " s ago")
+                + "; screen " + (pm.isInteractive() ? "on" : "off")
+                + "; battery saver " + (pm.isPowerSaveMode() ? "ON" : "off")
+                + "; battery exempt " + (pm.isIgnoringBatteryOptimizations(getPackageName()) ? "yes" : "NO")
+                + (Build.VERSION.SDK_INT >= 23 ? "; doze " + (pm.isDeviceIdleMode() ? "ON" : "off") : "")
+                + "; net " + netInfo(TripService.this));
+            gpsFixes = 0; netFixes = 0; ticks = 0;
+            handler.postDelayed(this, DIAG_MS);
+        }
+    };
+
+    static String netInfo(Context c) {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) c.getSystemService(CONNECTIVITY_SERVICE);
+            Network n = cm.getActiveNetwork();
+            if (n == null) return "none";
+            NetworkCapabilities nc = cm.getNetworkCapabilities(n);
+            if (nc == null) return "unknown";
+            String t = nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ? "wifi"
+                : nc.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ? "mobile" : "other";
+            return t + (nc.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ? " internet ok" : " NO internet");
+        } catch (Exception e) { return "?"; }
+    }
     static final long NET_AFTER_MS = 10000;
     static final float NET_MAX_ACC_M = 100f;   // only use a network position this good (Wi-Fi based, typically); for Ryan to confirm   // use a mobile-network position only when GPS has been quiet this long
 
@@ -45,7 +82,7 @@ public class TripService extends Service implements LocationListener {
                 if (++missedTicks >= 10) { appClosed(TripService.this); return; }
                 handler.postDelayed(this, 1000); return;
             }
-            missedTicks = 0;
+            missedTicks = 0; ticks++;
             a.tick();
             handler.postDelayed(this, 1000);
         }
@@ -81,15 +118,25 @@ public class TripService extends Service implements LocationListener {
                 lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000, 0, this, Looper.getMainLooper());
         } catch (SecurityException | IllegalArgumentException ignored) { }
         handler.postDelayed(tick, 1000);
+        handler.postDelayed(diag, DIAG_MS);
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            netCb = new ConnectivityManager.NetworkCallback() {
+                @Override public void onAvailable(Network n) { handler.post(() -> sendEvent("net: network available (" + netInfo(TripService.this) + ")")); }
+                @Override public void onLost(Network n) { handler.post(() -> sendEvent("net: network lost")); }
+            };
+            cm.registerDefaultNetworkCallback(netCb);
+        } catch (Exception ignored) { }
         sendEvent("service");
         return START_NOT_STICKY;
     }
 
     @Override public void onLocationChanged(Location l) {
         long now = System.currentTimeMillis();
-        if (LocationManager.GPS_PROVIDER.equals(l.getProvider())) lastGpsAt = now;
+        if (LocationManager.GPS_PROVIDER.equals(l.getProvider())) { lastGpsAt = now; gpsFixes++; }
         else if (now - lastGpsAt < NET_AFTER_MS) return;   // GPS is working: ignore the rougher network position
         else if (!l.hasAccuracy() || l.getAccuracy() > NET_MAX_ACC_M) return;   // too rough: a cell-tower position can be km out and would set off false alarms
+        if (!LocationManager.GPS_PROVIDER.equals(l.getProvider())) netFixes++;
         lastFixAt = now;
         MainActivity a = MainActivity.current.get();
         if (a != null) a.deliverFix(l);
@@ -114,6 +161,8 @@ public class TripService extends Service implements LocationListener {
     public void onDestroy() {
         running = false;
         handler.removeCallbacks(tick);
+        handler.removeCallbacks(diag);
+        if (netCb != null) try { ((ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb); } catch (Exception ignored) { }
         if (lm != null) try { lm.removeUpdates(this); } catch (Exception ignored) { }
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         super.onDestroy();

@@ -252,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.3 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.4 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -269,7 +269,8 @@ var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry contin
 var STALE_MS = 15000;      // no update for 15 s = lost contact
 var STORED_MAX_MS = 600000; // a stored relay message older than 10 min is from an old trip: ignore it
 var REPUBLISH_MS = 10000;
-var RELAY_SILENT_MS = 45000;  // connected but nothing received (not even our own messages) for 45 s: the connection is dead   // re-send position and gap settings every 10 s
+var RELAY_SILENT_MS = 45000;
+var REARM_MS = 10000;   // a gap must be back in range this long before its next alarm is spoken (stops chatter at the limit)  // connected but nothing received (not even our own messages) for 45 s: the connection is dead   // re-send position and gap settings every 10 s
 var UPLOAD_TIMEOUT_MS = 30000;
 var RESUME_MS = 600000;   // app only: a trip that stopped without End trip less than 10 min ago restarts by itself (Ryan 3e-a, 19 Oct)
 var UNSENT_MAX = 3;         // older trip logs kept on the phone until they reach the office
@@ -560,11 +561,11 @@ function connectRelay(){
   S.relayEvtT=Date.now();
   function mine(){ return c===S.client; }   // ignore late events from a client that has been replaced
   c.on("connect",function(){ if(!mine()) return; S.connected=true; S.lastRx=Date.now(); S.relayEvtT=Date.now(); L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
-  c.on("close",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","connection closed"); S.connected=false; });
+  c.on("close",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","connection closed | "+relayDiag(Date.now())); S.connected=false; });
   c.on("offline",function(){ if(!mine()) return; S.relayEvtT=Date.now(); if(S.connected) L("relay","offline"); S.connected=false; });
   c.on("reconnect",function(){ if(!mine()) return; S.relayEvtT=Date.now(); L("relay","trying to reconnect"); });
   c.on("error",function(e){ if(!mine()) return; S.relayEvtT=Date.now(); L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
-  c.on("message",function(t,payload,packet){ if(!mine()) return; S.lastRx=Date.now(); onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
+  c.on("message",function(t,payload,packet){ if(!mine()) return; S.lastRx=Date.now(); S.rxCount=(S.rxCount||0)+1; onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
 }
 function onRelayMessage(role, txt, stored){
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
@@ -616,13 +617,21 @@ function publishMine(force){
   S.lastPub=now;
   var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:f.time,s:now};   // t = when the position was measured, s = when sent (trial 19 Oct: an old fix was sent as new)
   var c=S.client, tp=topic(S.role);
-  seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
+  seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); S.txCount=(S.txCount||0)+1; } });
 }
 function publishCfg(){
   if(S.role!=="truck"||!S.client||!S.connected) return;
   var msg={id:myId,trucks:S.cfg.trucks,ranges:S.cfg.ranges,t:Date.now()};
   var c=S.client, tp=topic("cfg");
   seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
+}
+/* Diagnostics (Ryan, 19 Oct: relay sometimes off on return to the app): relay state, last received/sent, phone network */
+function relayDiag(now){
+  var c=S.client, st = !c ? "no client" : S.connected ? "on" : c.reconnecting ? "reconnecting" : c.disconnecting ? "closing" : "off";
+  var cn=navigator.connection, net = (navigator.onLine===false?"offline":"online")+(cn&&cn.effectiveType?" "+cn.effectiveType:"")+(cn&&cn.type?" "+cn.type:"");
+  var app=""; if(NATIVE && typeof NATIVE.netInfo==="function"){ try{ app=" | app net "+NATIVE.netInfo(); }catch(e){} }
+  return "relay "+st+", rx "+(S.lastRx?Math.round((now-S.lastRx)/1000)+"s":"-")+", tx "+(S.lastSend?Math.round((now-S.lastSend)/1000)+"s":"-")+
+    ", in "+(S.rxCount||0)+"/out "+(S.txCount||0)+", "+net+app+(document.visibilityState!=="visible"?", hidden":"");
 }
 /* Jobs that must keep running when the page is behind other apps. Called from render(), which the
    Android app drives once a second; the page's own timers stop there (seen on a real phone, 18 Oct). */
@@ -737,20 +746,26 @@ function alarms(results,now){
     var p=S.peers[r]; var stale = p && now-p.t>STALE_MS;
     if(p && !stale) S.everLive[r]=true;
     if(p && now-p.t>STORED_MAX_MS){ delete S.peers[r]; L("peer",nm(r)+" not heard from for 10 min: removed from the screen"); S.wasStale[r]=false; return; }
-    if(stale && !S.wasStale[r] && S.everLive[r]){ L("peer","lost contact with "+nm(r)); if(!muted){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),60000); } }
+    if(stale && !S.wasStale[r] && S.everLive[r]){ L("peer","lost contact with "+nm(r)); if(!muted){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),0); } }   // once per dropout (Ryan, 19 Oct)
     if(!stale && S.wasStale[r] && p) L("peer",nm(r)+" back");
     S.wasStale[r]=!!stale;
   });
-  if(muted) return;
+  // Gap alarms: spoken once when a gap goes out of range (Ryan, 19 Oct: the screen shows it in red, voice only once).
+  // Spoken again only after the gap has been back in range for 10 s, or switches between too close and too far.
   var bad=false;
   results.forEach(function(x){
-    var g=x.info;
+    var g=x.info, k=x.gap.key, a=S.alarmed[k];
     if(g.state==="close"||g.state==="far"){
-      bad=true;
-      say("gap_"+x.gap.key, GAPNAME[x.gap.key]+(g.state==="far"?" too far, ":" too close, ")+Math.round(g.value)+" metres", 30000);
+      if(a && a.state===g.state){ a.okSince=0; return; }
+      S.alarmed[k]={state:g.state, okSince:0};
+      L("alarm",GAPNAME[k]+(g.state==="far"?" too far ":" too close ")+Math.round(g.value)+" m"+(muted?" (muted)":""));
+      if(!muted){ bad=true; say("gap_"+k, GAPNAME[k]+(g.state==="far"?" too far, ":" too close, ")+Math.round(g.value)+" metres", 0); }
+    } else if(a && g.state==="ok"){
+      if(!a.okSince) a.okSince=now;
+      if(now-a.okSince>=REARM_MS) delete S.alarmed[k];
     }
   });
-  if(bad && now-S.lastBeep>5000){
+  if(bad){
     S.lastBeep=now;
     if(NATIVE && typeof NATIVE.beepTwice==="function"){ try{ NATIVE.beepTwice(180); }catch(e){} }   // app 1.0.1+: timed by the app, not a page timer
     else { beep(1150,0.18,0); beep(1150,0.18,0.28); }
@@ -836,7 +851,8 @@ function render(){
     var me=S.peers[S.role];
     L("sample",results.map(function(x){ return x.gap.key+"="+(x.info.value!=null?Math.round(x.info.value)+"m/"+x.info.state:x.info.state); }).join(" ")+
       " | me "+(me?kmh(me.spd)+" ±"+Math.round(me.acc||0)+"m":"no fix")+
-      " | ages "+chain().filter(function(r){return r!==S.role;}).map(function(r){ var p=S.peers[r]; return SHORT[r].replace(" ","")+"="+(p?Math.round((now-p.t)/1000)+"s":"-"); }).join(" "));
+      " | ages "+chain().filter(function(r){return r!==S.role;}).map(function(r){ var p=S.peers[r]; return SHORT[r].replace(" ","")+"="+(p?Math.round((now-p.t)/1000)+"s":"-"); }).join(" ")+
+      (S.practice?"":" | "+relayDiag(now)));
   }
   if(!S.practice){
     var quiet = !S.lastFix || now-S.lastFix.time>15000;
@@ -857,11 +873,11 @@ function render(){
   $("gpsTxt").textContent = S.practice ? "Pretend GPS" : f ? ("GPS ±"+Math.round(f.acc)+" m") : "GPS…";
   $("scrWrap").hidden=!(S.keepOn||S.force);
   if(S.keepOn||S.force){
-    wakeLock(); videoCheck();
+    if(!S.nativeKeep){ wakeLock(); videoCheck(); }
     var lockHeld = !!(S.wake && !S.wake.released), vidOn = S.force && !$("nosleep").paused;
-    var held = lockHeld || vidOn;
+    var held = lockHeld || vidOn || !!S.nativeKeep;
     $("scrDot").className="dot "+(held?"on":"off");
-    $("scrTxt").textContent = !held ? "Screen may lock" : vidOn ? "Screen forced on" : "Screen on";
+    $("scrTxt").textContent = !held ? "Screen may lock" : S.nativeKeep ? "Screen on (app)" : vidOn ? "Screen forced on" : "Screen on";
   }
   if(!$("settings").hidden) renderRangePanel();
   /* banners */
@@ -956,13 +972,18 @@ function wakeOff(){
   try{ if(S.wake){ var w=S.wake; S.wake=null; w.release(); } }catch(e){}
   try{ $("nosleep").pause(); }catch(e){}
 }
+function nativeScreen(on){   // app 1.0.3+: the phone's own keep-screen-on (the browser wake lock does not work inside the app)
+  if(!NATIVE || typeof NATIVE.keepScreenOn!=="function") return false;
+  on=!!on; if(S.nativeKeep!==on){ try{ NATIVE.keepScreenOn(on); }catch(e){} S.nativeKeep=on; L("screen","app keep screen on "+(on?"on":"off")); }
+  return true;
+}
 function setScreen(keep,force){
   if(keep!==S.keepOn||force!==S.force) L("screen","keep screen on "+(keep?"on":"off")+", force "+(force?"on":"off"));
   S.keepOn=keep; S.force=force; S.wakeTried=0;
   store.set("keepOn",keep?"1":"0"); store.set("forceOn",force?"1":"0");
   $("keepOn").checked=keep; $("keepOn2").checked=keep; $("forceOn").checked=force; $("forceOn2").checked=force;
   if(!keep){ try{ if(S.wake){ var w=S.wake; S.wake=null; w.release(); } }catch(e){} }
-  wakeLock(); videoCheck();
+  if(!nativeScreen((keep||force) && !$("run").hidden)){ wakeLock(); videoCheck(); }
   if(!$("run").hidden) render();
 }
 function start(){
@@ -984,7 +1005,7 @@ function start(){
   try{ if(!practice) history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
-  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
+  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.alarmed={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
   S.lastRepub=0; S.lastUpload=0; S.lastSend=0; S.oldIgnored={};
   // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
@@ -1018,6 +1039,7 @@ function start(){
   render();
 }
 function teardown(clearMine){
+  nativeScreen(false);
   S.timers.forEach(clearInterval); S.timers=[];
   if(NATIVE){ try{ NATIVE.tripEnd(); }catch(e){} }
   if(S.watchId!=null){ try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){} S.watchId=null; }
@@ -1068,7 +1090,9 @@ $("agreeYes").addEventListener("click",function(){
   $("agree").hidden=true; $("setup").hidden=false; start();
 });
 $("agreeNo").addEventListener("click",function(){ $("agree").hidden=true; $("setup").hidden=false; });
-window.addEventListener("online",function(){ if(store.get("uppending","")==="1") uploadLog("signal back"); else sendUnsent(); });
+window.addEventListener("offline",function(){ if(!$("run").hidden) L("net","phone reports no network | "+relayDiag(Date.now())); });
+try{ if(navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener("change",function(){ if(!$("run").hidden) L("net","network changed | "+relayDiag(Date.now())); }); }catch(e){}
+window.addEventListener("online",function(){ if(!$("run").hidden) L("net","phone reports network back | "+relayDiag(Date.now())); if(store.get("uppending","")==="1") uploadLog("signal back"); else sendUnsent(); });
 $("saveLog").addEventListener("click",function(){ L("log","saved during trip"); saveLogLocal(); saveLogFile(S.log); });
 $("saveLastLog").addEventListener("click",function(){ saveLogFile(loadLog()); });
 $("changeRole").addEventListener("click",goSetup);
@@ -1091,8 +1115,8 @@ $("copyLink").addEventListener("click",function(){
 function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($("shareLink")); var s=getSelection(); s.removeAllRanges(); s.addRange(r); $("copied").textContent="Selected, copy it now"; }catch(e){} }
 document.addEventListener("visibilitychange",function(){
   if($("run").hidden) return;
-  if(document.visibilityState==="visible"){ S.lastRx=Math.max(S.lastRx||0,Date.now()-RELAY_SILENT_MS+15000); L("phone","back on this page"); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
-  else { L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
+  if(document.visibilityState==="visible"){ L("phone","back on this page | "+relayDiag(Date.now())); S.lastRx=Math.max(S.lastRx||0,Date.now()-RELAY_SILENT_MS+15000); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
+  else { L("phone","going to background | "+relayDiag(Date.now())); L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
 });
 window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });
 

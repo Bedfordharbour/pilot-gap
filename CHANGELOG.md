@@ -2,6 +2,18 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.4 — 19 Oct 2026 (page) and Android app 1.0.3
+
+Ryan's decisions after the road test (19 Oct 06:00).
+- **Voice once per event.** The screen shows alarms in red, so a gap going out of range is spoken once, with one double beep and vibration. It is spoken again only after the gap has been back in range for 10 s, or if it switches between too close and too far. "Lost contact" is spoken once for every dropout; the old once-a-minute limit could hide a second dropout.
+- **Keep screen on works in the app (app 1.0.3).** The setting now uses the phone's own keep-screen-on, because the browser method does not work inside the app and the phone locked. The status row shows "Screen on (app)".
+- **More diagnostics in the trip log:**
+  - Every 30 s sample adds the relay state, seconds since a message was last received and sent, message counts, the phone's network as the browser sees it and, in the app, as Android sees it.
+  - Leaving and coming back to the page logs the same.
+  - Network lost, back or changed is logged.
+  - App 1.0.3 adds a line every minute with GPS and network fix counts, the last GPS fix, screen on or off, battery saver, battery exemption, doze and network.
+- Smoke test: 91 checks.
+
 ## 1.5.3 — 19 Oct 2026 (page only; app stays 1.0.2)
 
 Fault fixes from the first four-phone road test (19 Oct 04:47–05:31: Truck 1 in the app, lead in Samsung Internet, rear on iPhone, Truck 2 in Chrome).

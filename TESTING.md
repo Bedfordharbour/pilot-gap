@@ -38,11 +38,12 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 
 ## Android app (real phone)
 
-- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.2 or later, app 1.0.2.
+- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.4 or later, app 1.0.3.
 - [ ] Start a real trip: "Pilot Gap is tracking" notification appears; allow battery "not optimised" when asked.
 - [ ] Switch to Google Maps for 10 minutes: the other phones keep seeing this vehicle (no grey "last seen"), and alarms are still spoken.
 - [ ] Take or make a phone call during a trip: same as above.
 - [ ] Screen off (power button) for 10 minutes: same as above.
+- [ ] Keep screen on ticked in Settings: the phone does not lock; status row shows "Screen on (app)".
 - [ ] Swipe the app away during a trip: "Pilot Gap stopped" notification appears.
 - [ ] End trip: the tracking notification goes away; log arrives in Google Drive with "running in the Android app".
 - [ ] Mid-trip with the app behind Maps for 10+ minutes: the file in Google Drive updates without opening the app.

@@ -206,7 +206,7 @@ await ctxApp.addInitScript(() => {
   window.__calls = [];
   const rec = (n) => (...a) => { window.__calls.push([n, ...a]); };
   window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'),
-    beep: rec('beep'), beepTwice: rec('beepTwice'), vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
+    beep: rec('beep'), beepTwice: rec('beepTwice'), keepScreenOn: rec('keepScreenOn'), netInfo: () => 'mobile internet ok', vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
     appVersion: () => '1.0.0', hasLocation: () => true };
 });
 const a = await ctxApp.newPage(); a.on('pageerror', e => errors.push('app: ' + e.message));
@@ -228,10 +228,18 @@ await a.evaluate(t => window.__pg.onRelayMessage('lead', t, false), lead);
 await a.evaluate(() => window.__pgNativeTick()); await a.waitForTimeout(1500);
 const calls2 = await a.evaluate(() => window.__calls.filter(c => ['say','beep','beepTwice','vibrate'].includes(c[0])).map(c => c[0] + (c[1] ? ':' + String(c[1]).slice(0, 30) : '')));
 check('app: alarm spoken by the app', calls2.some(c => /^say:Front gap too far/.test(c)), calls2);
+// voice once per event (Ryan, 19 Oct): the same far gap does not speak again
+await a.evaluate(() => window.__pgNativeTick()); await a.waitForTimeout(2500);
+const says = await a.evaluate(() => window.__calls.filter(c => c[0] === 'say' && /Front gap too far/.test(c[1])).length);
+check('app: gap alarm spoken once, not repeated', says === 1, says);
 check('app: double beep and vibration by the app', calls2.some(c => c.startsWith('beepTwice')) && calls2.includes('vibrate'), calls2);
 await a.evaluate(() => window.__pgNativeEvent('gpsoff')); await a.waitForTimeout(1200);
 check('app: GPS-off warning shown', /GPS \(location\) is turned off/.test(await a.textContent('#banners')), await a.textContent('#banners'));
 await a.evaluate(() => window.__pgNativeEvent('gpson'));
+check('app: 30 s sample carries relay diagnostics', await a.evaluate(() => { window.__pg.S.lastSample = 0; window.__pgNativeTick(); return /relay (on|off|reconnecting|no client).*app net mobile internet ok/.test(window.__pg.logText(window.__pg.S.log)); }));
+await a.evaluate(() => window.__pg.S.keepOn = false); await a.click('#toggleSettings'); await a.check('#keepOn2'); await a.waitForTimeout(200);
+check('app: Keep screen on uses the app (phone does not lock)', await a.evaluate(() => window.__calls.some(c => c[0] === 'keepScreenOn' && c[1] === true)) && /Screen on \(app\)/.test(await a.textContent('#scrTxt')), await a.textContent('#scrTxt'));
+await a.uncheck('#keepOn2'); await a.click('#toggleSettings');
 await a.evaluate(() => window.__pgNativeEvent('approxonly')); await a.waitForTimeout(1200);
 check('app: approximate-only location explained', /Use precise location/.test(await a.textContent('#banners')), await a.textContent('#banners'));
 await a.evaluate(() => window.__pgNativeEvent('gpson'));

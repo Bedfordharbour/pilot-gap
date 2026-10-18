@@ -4,6 +4,18 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### Decisions (06:00), released as 1.5.4 / app 1.0.3
+
+- **Ryan on 5 and 6: "we have visual alarms so voice only needs to be once."** Built as:
+  - each gap alarm and each lost-contact is spoken once per event
+  - re-armed after 10 s back in range (Claude's figure, to stop chatter at a limit)
+  - nothing extra while parked
+
+  This replaces options 5a/5b/6a/6b.
+- **Ryan on 7: the app does not stay awake, so the phone locks.** Ryan: "Need to be able to lock through settings." Read as: Keep screen on in Settings must work in the app. Built with the phone's own keep-screen-on (app 1.0.3).
+- **Ryan:** the dropouts could be other app use. Sometimes the relay was not connected on return to the app, so add more diagnostics (built, see CHANGELOG).
+- **Ryan: no connection for 49 km** on the test route. Nothing can pass through the relay there. The screen shows grey "last seen" and an estimate for 2 min. A radio link (LoRa) is the long-term option.
+
 ### First four-phone road test (04:47–05:31)
 
 Logs in Google Drive > Pilot Gap logs:

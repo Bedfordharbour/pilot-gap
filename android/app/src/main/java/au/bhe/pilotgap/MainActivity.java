@@ -248,8 +248,22 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public void tripEnd() {
-            runOnUiThread(() -> stopService(new Intent(MainActivity.this, TripService.class)));
+            runOnUiThread(() -> {
+                getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                stopService(new Intent(MainActivity.this, TripService.class));
+            });
         }
+
+        /** Keep screen on, from the page's setting (Ryan, 19 Oct: the phone locked in the app). */
+        @JavascriptInterface public void keepScreenOn(boolean on) {
+            runOnUiThread(() -> {
+                if (on) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
+
+        /** Phone network as Android sees it, for the trip log. */
+        @JavascriptInterface public String netInfo() { return TripService.netInfo(MainActivity.this); }
 
         @JavascriptInterface public void say(String text) {
             if (ttsReady) tts.speak(text, TextToSpeech.QUEUE_ADD, null, "pg" + (++speakId));
