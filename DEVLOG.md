@@ -2,6 +2,58 @@
 
 Decisions, the reasons for them, and faults found. Newest first. Dates are Perth time.
 
+## 2026-10-19
+
+### Instruction (03:11)
+
+- Ryan: "Once you have finished the app run a full audit. and loop three times. fix any fault that doesn't need me. Create a new version and change the standard code to 234567 for both the app and the browser." Worked unattended. Each round was a separate reviewer that had not seen the fixes being made. Faults were fixed without asking. Anything that changes design, wording or the message format was left for Ryan (DriveCheck rule D-056).
+- **Default trip code 234567** (was 123456). It is set in the page, so the app picks it up too.
+- Work in progress was kept on the branch `wip/v1.5.1` until release, so the live page stayed on 1.5.0 during the audit.
+
+### First real-phone app log (Samsung SM-S918B, Android 16, app 1.0.0, Truck 2, 18 Oct 22:29–22:46)
+
+Google Drive file `pilotgap-...-truck2-...` (id 1X8Fo8OhnMo1vn6XyH6RHzUQh2nRHDXrW).
+
+- **Good:** the app tick kept gaps, alarms and the 30 s samples running behind other apps for 17 min.
+- **Fault:** the page's own timers stopped in the background. As a result, there was no 10-min upload (the log was sent 3 s after returning to the app), no 10 s re-send, and no relay reconnect. Fixed by moving them into `periodic()`, which runs from `render()` and is driven by the app tick.
+- **Fault:** GPS dropped for 1–2 min indoors or when stopped. Fixed in app 1.0.1 with a mobile-network position, used only when GPS has been quiet for 10 s and the network position is within 100 m.
+- **Fault:** stored relay messages from old trips were used as current. There was a lead pilot position 49 min old ("Lost contact with lead pilot" at start), and Truck 1 settings from the previous evening (2 trucks, between trucks 500–2000 m). Fixed: stored messages over 10 min old are ignored and logged. *This may also explain the open 500–2000 m truck-gap entry on phone unw5l7 (18 Oct): unverified.*
+
+### Audit round 1 (13 faults)
+
+Fixed:
+- leftover ("ghost") vehicles: Change role and Update now clear this phone's position, and an old Truck 2 no longer forces two-truck mode
+- a log waiting to send was overwritten by the next trip (now queued, up to 3)
+- an End-trip upload was dropped while another upload was in flight, and an upload had no timeout
+- the app crashed silently when Android killed the page engine
+- after opening with no signal, the app stayed cache-only
+- Update now left the app's tracking running with no trip
+- the default-code change was not released as a new version
+- PRACTICE was left in the trip code after a reload
+- font size or language changes ended the trip
+- approximate-only location gave a misleading message
+
+Left for Ryan:
+- the trip code can be guessed offline from the channel name (fixing it changes the message format)
+- anyone with the public key can add or overwrite logs in the Drive folder
+- the agreement wording ("close the page" is not true for the app)
+
+### Audit round 2 (9 faults)
+
+Fixed:
+- the manual relay `reconnect()` from round 1 could leave two connections fighting over one id; now the old client is ended and a new one made, and late events from a replaced client are ignored
+- the upload timeout used a page timer, which freezes in the background; it is now also checked from `periodic()`
+- a successful mid-trip upload cleared "waiting to send", so a trip ended by role change, crash or a flat phone lost its last lines; a running real trip now always counts as waiting
+- a refused older log blocked the queue
+- failed final uploads were only retried on the "online" event; the start screen now retries every 2 min
+- the second alarm beep was late in the background (app 1.0.1 times it)
+- the bold-text setting ended the trip
+- the cache-mode reset could run too early (needs a check on a phone in airplane mode)
+
+Round 1's network-position fix could feed in a position kilometres out, with a false speed and false alarms. Limited to positions within 100 m, and no speed worked out from a position worse than 100 m. **The 100 m figure is for Ryan to confirm.**
+
+Left for Ryan: when Android kills the page engine mid-trip, the trip stops with only a notification. Restarting the trip automatically, or speaking a warning, is a design choice.
+
 ## 2026-10-18
 
 ### Decisions
