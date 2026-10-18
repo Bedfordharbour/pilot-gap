@@ -324,8 +324,8 @@ function startGps(){
 function simTick(){
   var t=(Date.now()-S.simT0)/1000, v=80/3.6;
   var lat0=-33.8615, lon0=121.8912;
-  var gL=1250+900*Math.sin(t/45), gR=1000+750*Math.sin(t/33+1);
-  var dgL=900/45*Math.cos(t/45), dgR=750/33*Math.cos(t/33+1);
+  var gL=1250+900*Math.sin(t/120), gR=1000+750*Math.sin(t/100+1);
+  var dgL=900/120*Math.cos(t/120), dgR=750/100*Math.cos(t/100+1);
   var sT=v*t, now=Date.now();
   function put(role,s,spd){ S.peers[role]={lat:lat0+s/111320,lon:lon0,spd:spd,hdg:0,acc:5,t:now}; }
   put("truck",sT,v);
