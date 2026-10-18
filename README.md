@@ -9,7 +9,7 @@ Live page: https://bedfordharbour.github.io/pilot-gap/
 1. Open the live page on each phone.
 2. Tap this phone's role: Lead, Truck 1, Truck 2 (only when there is a second truck) or Rear.
 3. First real trip on a phone: the driver types their name and agrees to share their location (asked once per phone).
-4. Use the same trip code on every phone (default `123456` for testing; **New code** makes a random one for real trips). At least 4 letters or numbers.
+4. Use the same trip code on every phone (default `234567` for testing; **New code** makes a random one for real trips). At least 4 letters or numbers.
 5. On Truck 1 only: set the gaps (defaults front 500–2000 m, between trucks 0–100 m, rear 100–1000 m) and tick **Second truck on this trip** if there is one. The other phones get these from Truck 1. Tap **Start**.
 6. Mount the phone, plug it in and leave the page open. Press **End trip** at the end; the log is sent to the office by itself.
 

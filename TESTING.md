@@ -6,7 +6,7 @@
 node tests/smoke.mjs
 ```
 
-It must print "All checks passed". Then look at `tests/phone.png`. It checks: the relay library loads from the repo, the default trip code is 1234, the version shows, the screen options are off by default, practice mode shows a gap, Settings opens and closes, Mute turns on and off, there is no sideways scroll, and there are no script errors.
+It must print "All checks passed". Then look at `tests/phone.png`. It checks: the relay library loads from the repo, the default trip code is 234567, the version shows, the screen options are off by default, practice mode shows a gap, Settings opens and closes, Mute turns on and off, there is no sideways scroll, scrambling, old stored relay messages are ignored, unsent logs are kept and sent later, the in-app checks (with a stand-in for the app, including the 10-minute upload from the app's tick), and there are no script errors.
 
 ## After every push (on a phone)
 
@@ -18,7 +18,7 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 
 - [ ] All three phones see each other at the start.
 - [ ] Gaps look right against what the drivers can see or the odometers.
-- [ ] Red alert, beep and voice when a gap leaves 500–2000 m.
+- [ ] Red alert, beep and voice when a gap leaves its range (front 500–2000 m, rear 100–1000 m by default).
 - [ ] Gap goes grey with "last seen" in a dead spot, and comes back afterwards.
 - [ ] Did any screen lock? Which phone, and which screen setting was on?
 - [ ] Battery use over the trip, with and without Keep screen on.
@@ -38,13 +38,16 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 
 ## Android app (real phone)
 
-- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.0 or later.
+- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.1 or later, app 1.0.1.
 - [ ] Start a real trip: "Pilot Gap is tracking" notification appears; allow battery "not optimised" when asked.
 - [ ] Switch to Google Maps for 10 minutes: the other phones keep seeing this vehicle (no grey "last seen"), and alarms are still spoken.
 - [ ] Take or make a phone call during a trip: same as above.
 - [ ] Screen off (power button) for 10 minutes: same as above.
 - [ ] Swipe the app away during a trip: "Pilot Gap stopped" notification appears.
 - [ ] End trip: the tracking notification goes away; log arrives in Google Drive with "running in the Android app".
+- [ ] Mid-trip with the app behind Maps for 10+ minutes: the file in Google Drive updates without opening the app.
+- [ ] Indoors or under cover: the vehicle keeps showing on the other phones (network position) instead of going grey.
+- [ ] Change font size in the phone's settings mid-trip: the trip carries on.
 
 ## Update check
 
@@ -61,7 +64,7 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - Android app: running the page behind other apps is unverified on a real phone until the checklist above is done. Some phone makers (for example Samsung, Xiaomi) close background apps harder; the battery "not optimised" setting is needed.
 
 - Phones on 1.0 or 1.1 cannot see phones on 1.2 (different relay channel). Every phone must show version 1.2.0 or later.
-- The default code 123456 is not private; anyone with the page and that code can see the trip.
+- The default code 234567 is not private; anyone with the page and that code can see the trip.
 
 - Distance is a straight line; on bends the road distance is longer.
 - iPhones do not vibrate from a web page; they get beeps and voice only.

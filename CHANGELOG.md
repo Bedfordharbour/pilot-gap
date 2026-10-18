@@ -2,6 +2,19 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.1 — 19 Oct 2026 (page) and Android app 1.0.1
+
+Fault fixes from three review rounds and the first real-phone app log (Samsung, Truck 2, 18 Oct 22:29–22:46). No design changes.
+
+- **Default trip code is now 234567** (Ryan, 19 Oct 03:11; was 123456). Phones still on 1.5.0 default to 123456, so update every phone.
+- **App in the background:** the 10-second re-send of position and gap settings, the 10-minute log upload and the relay reconnect now run from the app's once-a-second tick. Before, they stopped until the driver came back to the app (seen in the log: no upload for 17 min, sent 3 s after returning).
+- **Old relay messages ignored:** a stored position or gap setting more than 10 minutes old is from an earlier trip and is ignored (logged). Before, yesterday's Truck 1 settings and a lead pilot position 49 min old were used at the start of a trip, and a left-over Truck 2 could switch every phone to two trucks and stop the rear-gap alarm. A Truck 2 not heard from for 10 minutes no longer forces two-truck mode.
+- **Change role and Update now clear this phone's position from the relay**, so no "ghost" vehicle is left behind. Update now also ends the trip properly (stops the app's tracking, sends the log).
+- **Trip logs not lost:** a log still waiting to send is kept (up to 3) when a new log starts, and sent when signal returns. An upload asked for while another is in flight is sent again afterwards, so End trip always sends the last lines. Uploads give up after 30 s and try again later, instead of blocking all later uploads.
+- Practice mode no longer leaves "PRACTICE" in the trip code after a reload.
+- **App 1.0.1:** uses the phone's mobile-network position when GPS has had no fix for 10 s (GPS dropped for 1–2 min in the log). Shows "Pilot Gap stopped" when the app is swiped away, and restarts the page (with the warning) if Android closes the page's engine, where 1.0.0 crashed silently. Correction to 1.5.0: the warning cannot appear if Android kills the whole app. After opening with no signal, the app goes back to normal loading so uploads and update checks work. Changing font size, display size or language no longer ends the trip. If only approximate location is allowed, it says to turn on "Use precise location".
+- Smoke test: 76 checks.
+
 ## 1.5.0 — 18 Oct 2026 (page) and Android app 1.0.0
 
 - **Android app 1.0.0** (`app/PilotGap.apk`, source in `android/`). A thin shell around this same page, so screens and gap logic stay one set of code. A background service (like DriveCheck's `DriveService`) keeps GPS, the relay, alarms and the log running while the driver is in Maps or on a call, with a permanent "Pilot Gap is tracking" notification. Alarms are spoken by Android's own voice, with beep and vibration. Back keeps the trip running; End trip stops it. If Android or the driver closes the app mid-trip, a loud notification says "Pilot Gap stopped". Asks once to be left out of battery saving.

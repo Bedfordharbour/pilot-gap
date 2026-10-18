@@ -35,10 +35,10 @@ await p.goto('http://localhost:8765/');
 check('no update box when the website has the same version', !(await p.isVisible('#updateBox')));
 check('relay library loads from repo', await p.evaluate(() => typeof mqtt) === 'object');
 const code0 = await p.inputValue('#trip');
-check('default trip code is 123456', code0 === '123456', code0);
+check('default trip code is 234567', code0 === '234567', code0);
 await p.click('#newTrip');
 const code1 = await p.inputValue('#trip');
-check('New code makes a random 6-character code', /^[A-Z0-9]{6}$/.test(code1) && code1 !== '123456', code1);
+check('New code makes a random 6-character code', /^[A-Z0-9]{6}$/.test(code1) && code1 !== '234567', code1);
 check('version shown', /\d+\.\d+\.\d+/.test(await p.textContent('.ver')), await p.textContent('.ver'));
 check('screen options off by default', !(await p.isChecked('#keepOn')) && !(await p.isChecked('#forceOn')));
 check('four roles offered', (await p.locator('.role').count()) === 4);
@@ -128,6 +128,18 @@ check('live message from a phone with a slow clock is fresh', await p.evaluate((
 await p.evaluate(t => window.__pg.onRelayMessage('lead', t, true), old);
 await p.waitForTimeout(300);
 check('stored message keeps its own (old) time', await p.evaluate(() => Date.now() - window.__pg.S.peers.lead.t > 50000));
+// stored messages left by an earlier trip (over 10 min old) are ignored: no ghost vehicle, no old settings
+const ghost = await p.evaluate(() => window.__pg.seal({id:'g', lat:-33.87, lon:121.89, spd:0, hdg:0, acc:5, t:Date.now()-20*60000}));
+await p.evaluate(t => window.__pg.onRelayMessage('truck2', t, true), ghost);
+const oldCfg = await p.evaluate(() => window.__pg.seal({id:'x', trucks:1, t:Date.now()-20*60000, ranges:{front:{min:1,max:2}, mid:{min:0,max:100}, rear:{min:7,max:8}}}));
+await p.evaluate(t => window.__pg.onRelayMessage('cfg', t, true), oldCfg);
+await p.waitForTimeout(300);
+check('old stored position from an earlier trip ignored', await p.evaluate(() => !window.__pg.S.peers.truck2));
+check('old stored gap settings ignored', await p.evaluate(() => window.__pg.S.cfg.ranges.rear.min === 150));
+check('old stored messages logged', await p.evaluate(() => /ignored old stored Truck 2 position/.test(window.__pg.logText(window.__pg.S.log)) && /ignored old stored gap settings/.test(window.__pg.logText(window.__pg.S.log))));
+await p.evaluate(() => { window.__pg.S.peers.truck2 = {lat:-33.87, lon:121.89, spd:0, hdg:0, acc:5, t:Date.now()-20*60000}; window.__pg.S.cfg.trucks = 1; });
+check('a Truck 2 not heard from for 10 min does not force two-truck mode', await p.evaluate(() => !window.__pg.twoTrucks()));
+await p.evaluate(() => { delete window.__pg.S.peers.truck2; window.__pg.S.cfg.trucks = 2; });
 check('wrong-code, plain and bad messages ignored', (await p.textContent('#gap_rear_range')) === '150–900 m', await p.textContent('#gap_rear_range'));
 
 // Trip log (8a)
@@ -150,8 +162,17 @@ const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).ca
 check('Save trip log gives a file', !!dl && /^pilotgap-log-\d{8}-\d{4}-rear\.txt$/.test(dl.suggestedFilename()), dl && dl.suggestedFilename());
 await p.screenshot({ path: path.join(root, 'tests', 'phone-trip-ended.png') });
 await p.goto('http://localhost:8765/'); await p.waitForTimeout(500);
-check('page opens with 123456 again', (await p.inputValue('#trip')) === '123456', await p.inputValue('#trip'));
+check('page opens with 234567 again', (await p.inputValue('#trip')) === '234567', await p.inputValue('#trip'));
 check('last trip log still offered after reload', await p.isVisible('#lastLog'));
+// a log still waiting to send is kept when a new log starts (not overwritten), and sent later
+const rearSent = uploads.filter(u => /-rear-/.test(u.name)).length;
+await p.evaluate(() => localStorage.setItem('pg_uppending', '1'));
+await p.click('[data-role=lead]'); await p.check('#practice'); await p.click('#start'); await p.waitForTimeout(600);
+check('unsent log kept when a new log starts', await p.evaluate(() => window.__pg.unsent().length === 1 && /-rear-/.test(window.__pg.unsent()[0].name)), await p.evaluate(() => window.__pg.unsent().map(x => x.name)));
+check('practice code not put in the address', await p.evaluate(() => !/PRACTICE/.test(location.search)), await p.evaluate(() => location.search));
+await p.click('#stop'); await p.waitForTimeout(300);
+await p.evaluate(() => { window.__pg.setUploadUrl('/upload'); window.__pg.sendUnsent(); }); await p.waitForTimeout(800);
+check('older unsent log sent later', uploads.filter(u => /-rear-/.test(u.name)).length === rearSent + 1 && await p.evaluate(() => window.__pg.unsent().length === 0));
 // update check: serve a newer version number and check the box appears, without reloading
 await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
 await p.route('**/?check=*', async r => { const res = await r.fetch(); const body = (await res.text()).replace(/var VERSION = "[^"]+"/, 'var VERSION = "9.9.9 (test)"'); await r.fulfill({ response: res, body }); });
@@ -200,6 +221,14 @@ check('app: beep and vibration by the app', calls2.some(c => c.startsWith('beep'
 await a.evaluate(() => window.__pgNativeEvent('gpsoff')); await a.waitForTimeout(1200);
 check('app: GPS-off warning shown', /GPS \(location\) is turned off/.test(await a.textContent('#banners')), await a.textContent('#banners'));
 await a.evaluate(() => window.__pgNativeEvent('gpson'));
+await a.evaluate(() => window.__pgNativeEvent('approxonly')); await a.waitForTimeout(1200);
+check('app: approximate-only location explained', /Use precise location/.test(await a.textContent('#banners')), await a.textContent('#banners'));
+await a.evaluate(() => window.__pgNativeEvent('gpson'));
+// periodic jobs run from render (driven by the app's tick in the background): 10-min upload
+const upBefore = uploads.length;
+await a.evaluate(() => { const S = window.__pg.S; S.connected = true; S.lastUpload = Date.now() - 11 * 60000; window.__pg.periodic(Date.now()); S.connected = false; });
+await a.waitForTimeout(800);
+check('app: 10-minute upload runs from the tick, not a page timer', uploads.length === upBefore + 1 && /-truck-AppDriver-/.test(uploads[uploads.length - 1].name), uploads.length - upBefore);
 await a.click('#stop'); await a.waitForTimeout(800);
 const calls3 = await a.evaluate(() => window.__calls.map(c => c[0]));
 check('app: End trip stops background tracking', calls3.includes('tripEnd'), calls3);

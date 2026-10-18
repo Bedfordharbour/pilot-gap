@@ -32,7 +32,8 @@ public class TripService extends Service implements LocationListener {
     PowerManager.WakeLock wakeLock;
     LocationManager lm;
     final Handler handler = new Handler(Looper.getMainLooper());
-    long lastFixAt;
+    long lastFixAt, lastGpsAt;
+    static final long NET_AFTER_MS = 10000;   // use a mobile-network position only when GPS has been quiet this long
 
     final Runnable tick = new Runnable() {
         @Override public void run() {
@@ -68,20 +69,34 @@ public class TripService extends Service implements LocationListener {
         } catch (SecurityException | IllegalArgumentException e) {
             sendEvent("nogps");
         }
+        // Fallback when GPS drops out (indoors, under cover, stopped): seen on a real phone 18 Oct, 1-2 min gaps.
+        try {
+            if (lm.getAllProviders().contains(LocationManager.NETWORK_PROVIDER))
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000, 0, this, Looper.getMainLooper());
+        } catch (SecurityException | IllegalArgumentException ignored) { }
         handler.postDelayed(tick, 1000);
         sendEvent("service");
         return START_NOT_STICKY;
     }
 
     @Override public void onLocationChanged(Location l) {
-        lastFixAt = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        if (LocationManager.GPS_PROVIDER.equals(l.getProvider())) lastGpsAt = now;
+        else if (now - lastGpsAt < NET_AFTER_MS) return;   // GPS is working: ignore the rougher network position
+        lastFixAt = now;
         MainActivity a = MainActivity.current.get();
         if (a != null) a.deliverFix(l);
     }
     // Implemented explicitly: on Android 10 and older these are not default methods.
     @Override public void onStatusChanged(String p, int s, Bundle b) { }
-    @Override public void onProviderEnabled(String p) { sendEvent("gpson"); }
-    @Override public void onProviderDisabled(String p) { sendEvent("gpsoff"); }
+    @Override public void onProviderEnabled(String p) { if (LocationManager.GPS_PROVIDER.equals(p)) sendEvent("gpson"); }
+    @Override public void onProviderDisabled(String p) { if (LocationManager.GPS_PROVIDER.equals(p)) sendEvent("gpsoff"); }
+
+    /** The app was swiped away from the recent-apps list during a trip. */
+    @Override public void onTaskRemoved(Intent root) {
+        if (running) appClosed(this);
+        super.onTaskRemoved(root);
+    }
 
     void sendEvent(String what) {
         MainActivity a = MainActivity.current.get();

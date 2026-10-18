@@ -252,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.1 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -267,6 +267,10 @@ var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, sp
 var LOG_MAX = 6000;           // trip log entries kept on the phone
 var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry continues the same log
 var STALE_MS = 15000;      // no update for 15 s = lost contact
+var STORED_MAX_MS = 600000; // a stored relay message older than 10 min is from an old trip: ignore it
+var REPUBLISH_MS = 10000;   // re-send position and gap settings every 10 s
+var UPLOAD_TIMEOUT_MS = 30000;
+var UNSENT_MAX = 3;         // older trip logs kept on the phone until they reach the office
 var ESTIMATE_MS = 120000;  // stop estimating 2 min after contact lost
 var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
 var NAME  = {lead:"Lead pilot", truck:"Truck 1", truck2:"Truck 2", rear:"Rear pilot"};
@@ -391,22 +395,46 @@ function refreshUpLine(){
   f.textContent = !UPLOAD_URL ? "Automatic log upload is not set up yet." : practice ? "Practice trips are not sent." :
     pend ? "Waiting to send to the office." : ok ? "Sent to the office at "+hhmm(ok)+"." : "";
 }
+function postLog(name,text){
+  var ac = window.AbortController ? new AbortController() : null;
+  var tm = ac ? setTimeout(function(){ try{ ac.abort(); }catch(e){} },UPLOAD_TIMEOUT_MS) : 0;
+  return fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:UPLOAD_KEY,name:name,text:text}),signal:ac?ac.signal:undefined})
+    .then(function(r){ clearTimeout(tm); return r.json(); }, function(e){ clearTimeout(tm); throw e; });
+}
+// Older trip logs that had not reached the office when a new log started (kept, not overwritten).
+function unsent(){ try{ var u=JSON.parse(store.get("unsent","[]")); return Array.isArray(u)?u:[]; }catch(e){ return []; } }
+function keepUnsent(name,text){
+  var u=unsent().filter(function(x){ return x.name!==name; }); u.push({name:name,text:text});
+  while(u.length>UNSENT_MAX) u.shift();
+  try{ localStorage.setItem("pg_unsent",JSON.stringify(u)); }catch(e){ try{ localStorage.setItem("pg_unsent",JSON.stringify(u.slice(-1))); }catch(e2){} }
+}
+function sendUnsent(){
+  var u=unsent(); if(!u.length || S.sendingOld || !UPLOAD_URL || navigator.onLine===false) return;
+  S.sendingOld=true; var x=u[0];
+  postLog(x.name,x.text).then(function(j){
+    S.sendingOld=false;
+    if(j && j.ok){ var r=unsent().filter(function(y){ return y.name!==x.name; }); store.set("unsent",JSON.stringify(r)); L("upload","older log sent: "+x.name); sendUnsent(); }
+  }).catch(function(){ S.sendingOld=false; });
+}
 function uploadLog(reason){
   if(!UPLOAD_URL){ setUpStatus("Automatic log upload is not set up yet."); return; }
+  sendUnsent();
   var log = $("run").hidden ? loadLog() : S.log, name=logName();
-  if(!log.length || !name || S.uploading) return;
+  if(!log.length || !name) return;
+  if(S.uploading){ S.uploadAgain=reason; return; }   // send again when the one in flight finishes, so the last lines are not lost
   if(navigator.onLine===false){ store.set("uppending","1"); setUpStatus("Log waiting to send (no signal)."); return; }
-  S.uploading=true;
+  S.uploading=true; S.uploadAgain="";
   var n=log.length;
-  fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:UPLOAD_KEY,name:name,text:logText(log)})})
-    .then(function(r){ return r.json(); })
+  postLog(name,logText(log))
     .then(function(j){
       S.uploading=false;
-      if(j && j.ok){ store.set("uppending",""); store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
+      if(j && j.ok){ if(!S.uploadAgain) store.set("uppending",""); store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
       else { store.set("uppending","1"); setUpStatus("Log not sent: "+((j&&j.error)||"no reply")+". Will try again."); L("upload","refused: "+((j&&j.error)||"no reply")); }
+      if(S.uploadAgain){ var r=S.uploadAgain; S.uploadAgain=""; uploadLog(r); }
     }).catch(function(e){
       S.uploading=false; store.set("uppending","1");
-      setUpStatus("Log waiting to send. Will try again."); L("upload","failed: "+((e&&e.message)||"network"));
+      setUpStatus("Log waiting to send. Will try again."); L("upload","failed: "+((e&&e.name==="AbortError")?"no reply in 30 s":(e&&e.message)||"network"));
+      if(S.uploadAgain){ S.uploadAgain=""; }
     });
 }
 
@@ -431,11 +459,14 @@ function doUpdate(){
   L("update","driver tapped update"); saveLogLocal();
   var q=new URLSearchParams(location.search); q.set("v",String(Date.now()));
   if(S.trip && S.trip!=="PRACTICE") q.set("trip",S.trip);
-  location.replace(location.pathname+"?"+q.toString());
+  if(q.get("trip")==="PRACTICE") q.delete("trip");
+  var running=!$("run").hidden, wasPractice=S.practice;
+  if(running){ L("end","trip ended for update"); saveLogLocal(); teardown(true); if(!wasPractice) store.set("uppending","1"); }  // clears this phone's position from the relay and stops the app's tracking
+  setTimeout(function(){ location.replace(location.pathname+"?"+q.toString()); }, running?600:0);
 }
 
 /* ---------- trip shape ---------- */
-function twoTrucks(){ return S.cfg.trucks===2 || S.role==="truck2" || !!S.peers.truck2; }
+function twoTrucks(){ var t2=S.peers.truck2; return S.cfg.trucks===2 || S.role==="truck2" || !!(t2 && Date.now()-t2.t<STORED_MAX_MS); }
 function nm(r){ return (r==="truck" && !twoTrucks()) ? "Truck" : NAME[r]; }
 function chain(){ return twoTrucks() ? ["lead","truck","truck2","rear"] : ["lead","truck","rear"]; }
 function gapList(){
@@ -502,11 +533,12 @@ function connectRelay(){
   if(typeof mqtt==="undefined"){ S.netErr="Relay library did not load"; return; }
   var c = mqtt.connect(RELAY,{clientId:"pg_"+myId, keepalive:30, reconnectPeriod:3000, connectTimeout:10000, clean:true});
   S.client=c;
-  c.on("connect",function(){ S.connected=true; L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
-  c.on("close",function(){ if(S.connected) L("relay","connection closed"); S.connected=false; });
-  c.on("offline",function(){ if(S.connected) L("relay","offline"); S.connected=false; });
-  c.on("reconnect",function(){ L("relay","trying to reconnect"); });
-  c.on("error",function(e){ L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
+  S.relayEvtT=Date.now();
+  c.on("connect",function(){ S.connected=true; S.relayEvtT=Date.now(); L("relay","connected"); c.subscribe(TOPIC_BASE+S.topicId+"/+",{qos:0}); publishCfg(); publishMine(true); });
+  c.on("close",function(){ S.relayEvtT=Date.now(); if(S.connected) L("relay","connection closed"); S.connected=false; });
+  c.on("offline",function(){ S.relayEvtT=Date.now(); if(S.connected) L("relay","offline"); S.connected=false; });
+  c.on("reconnect",function(){ S.relayEvtT=Date.now(); L("relay","trying to reconnect"); });
+  c.on("error",function(e){ S.relayEvtT=Date.now(); L("relay","error: "+((e&&e.message)||"unknown")); S.connected=false; });
   c.on("message",function(t,payload,packet){ onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
 }
 function onRelayMessage(role, txt, stored){
@@ -521,6 +553,11 @@ function onRelayMessage(role, txt, stored){
 // A stored (retained) message replayed on connect keeps the sender's time, so an old position is not shown as fresh.
 function handleMsg(role, d, stored){
   var now=Date.now(), at = stored ? Math.min(d.t,now) : now;
+  if(stored && typeof d.t==="number" && now-d.t>STORED_MAX_MS){   // left on the relay by an earlier trip
+    S.oldIgnored=S.oldIgnored||{};
+    if(!S.oldIgnored[role]){ S.oldIgnored[role]=1; L("relay","ignored old stored "+(role==="cfg"?"gap settings":nm(role)+" position")+" from "+stamp(d.t)); }
+    return;
+  }
   if(role==="cfg"){
     if(S.role==="truck") return;                  // Truck 1 owns the settings
     if(!validCfg(d) || typeof d.t!=="number"){ L("cfg","bad gap settings ignored"); return; }
@@ -546,13 +583,27 @@ function publishMine(force){
   S.lastPub=now;
   var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:now};
   var c=S.client, tp=topic(S.role);
-  seal(msg).then(function(x){ if(c===S.client && S.connected) c.publish(tp,x,{qos:0,retain:true}); });
+  seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
 }
 function publishCfg(){
   if(S.role!=="truck"||!S.client||!S.connected) return;
   var msg={id:myId,trucks:S.cfg.trucks,ranges:S.cfg.ranges,t:Date.now()};
   var c=S.client, tp=topic("cfg");
-  seal(msg).then(function(x){ if(c===S.client && S.connected) c.publish(tp,x,{qos:0,retain:true}); });
+  seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
+}
+/* Jobs that must keep running when the page is behind other apps. Called from render(), which the
+   Android app drives once a second; the page's own timers stop there (seen on a real phone, 18 Oct). */
+function periodic(now){
+  if(S.practice) return;
+  if(now-(S.lastRepub||0)>=REPUBLISH_MS){
+    S.lastRepub=now; publishMine(true); publishCfg();
+    if(S.client && S.connected && now-(S.lastSend||0)>20000){ try{ S.client.publish(TOPIC_BASE+S.topicId+"/hb","",{qos:0}); S.lastSend=now; }catch(e){} }  // keeps the relay connection alive with no GPS
+  }
+  if(S.connected && now-(S.lastUpload||S.tripStart)>=UPLOAD_EVERY_MS){ S.lastUpload=now; uploadLog("timer"); }
+  if(S.client && !S.connected && now-(S.relayEvtT||0)>15000){   // the relay library's own retry timer is not running
+    S.relayEvtT=now; L("relay","reconnecting");
+    try{ S.client.reconnect(); }catch(e){ L("relay","reconnect failed: "+((e&&e.message)||"")); }
+  }
 }
 function cfgText(c){ return "front "+fmtRange(c.ranges.front)+(c.trucks===2?", between trucks "+fmtRange(c.ranges.mid):"")+", rear "+fmtRange(c.ranges.rear)+", "+c.trucks+" truck"+(c.trucks===2?"s":""); }
 
@@ -591,8 +642,9 @@ window.__pgNativeFix=function(lat,lon,acc,spd,hdg){
 window.__pgNativeTick=function(){ if(!$("run").hidden && document.visibilityState!=="visible") render(); };  // keeps gaps and alarms going behind other apps
 window.__pgNativeEvent=function(what){
   var msg={service:"background tracking on",servicefailed:"background tracking could not start",nolocation:"location permission missing",
-           nogps:"GPS could not start",gpsoff:"phone GPS turned off",gpson:"phone GPS turned on"}[what]||what;
+           nogps:"GPS could not start",approxonly:"precise location not allowed (approximate only)",gpsoff:"phone GPS turned off",gpson:"phone GPS turned on"}[what]||what;
   L("app",msg);
+  if(what==="approxonly") S.gpsError="Pilot Gap has approximate location only. In the phone's settings, open Apps, Pilot Gap, Location, turn on Use precise location, then press Start again.";
   if(what==="nolocation") S.gpsError="Allow location for Pilot Gap in the phone's settings, then press Start again.";
   if(what==="gpsoff") S.gpsError="The phone's GPS (location) is turned off. Turn it on in the quick settings.";
   if(what==="gpson") S.gpsError="";
@@ -803,6 +855,7 @@ function render(){
     });
   }
   alarms(results,now);
+  periodic(now);
   if(now-(S.lastPersist||0)>10000){ S.lastPersist=now; saveLogLocal(); }
 }
 
@@ -882,15 +935,19 @@ function start(){
   } else { S.cfg=clone(DEFAULT_CFG); S.cfgFrom="default"; S.cfgT=0; }
   S.trip=code||"PRACTICE"; S.practice=practice;
   store.set("role",S.role); if(!practice) store.set("trip",S.trip);
-  try{ history.replaceState(null,"",shareUrl()); }catch(e){}
+  try{ if(!practice) history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
   S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
+  S.lastRepub=0; S.lastUpload=0; S.lastSend=0; S.oldIgnored={};
   // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
   var ag0=agreement(), logKey=(S.practice?"P":"R")+"|"+S.role+"|"+(ag0?ag0.name:"");
   var old=loadLog(); S.log = (old.length && Date.now()-old[old.length-1][0]<LOG_JOIN_MS && logName() && store.get("logkey","")===logKey) ? old : [];
-  if(!S.log.length){ newLogName(); store.set("logkey",logKey); store.set("uppending",""); }
+  if(!S.log.length){
+    if(old.length && logName() && store.get("uppending","")==="1") keepUnsent(logName(),logText(old));   // previous trip not yet at the office: keep it
+    newLogName(); store.set("logkey",logKey); store.set("uppending","");
+  }
   L("start","version "+VERSION+", role "+nm(S.role)+(S.practice?", PRACTICE":"")+", gaps "+cfgText(S.cfg)+(S.role==="truck"?" (set here)":" (defaults until Truck 1 connects)"));
   var ag=agreement(); L("start","location agreement: "+(ag?ag.name+", agreed "+stamp(ag.t)+" (wording v"+ag.v+")":"none (practice)"));
   if(NATIVE) L("start","running in the Android app "+NATIVE.appVersion()+" (keeps going behind other apps)");
@@ -904,8 +961,7 @@ function start(){
   }
   S.timers.push(setInterval(render,1000));
   checkUpdate();
-  S.timers.push(setInterval(function(){ publishMine(true); publishCfg(); },10000));
-  if(!S.practice) S.timers.push(setInterval(function(){ if(S.connected) uploadLog("timer"); },UPLOAD_EVERY_MS));
+  // re-send every 10 s, upload every 10 min and relay reconnect run from render() (periodic), so they keep going in the Android app's background
   setUpStatus(UPLOAD_URL ? (S.practice ? "Practice trips are not sent." : "Log will be sent every 10 minutes while connected.") : "Automatic log upload is not set up yet.");
   $("shareLink").textContent=shareUrl();
   fillRanges("l_",S.cfg);
@@ -925,7 +981,7 @@ function teardown(clearMine){
   S.connected=false; S.lastFix=null;
   wakeOff();
 }
-function goSetup(){ L("end","role change"); saveLogLocal(); teardown(false); $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
+function goSetup(){ L("end","role change"); saveLogLocal(); teardown(true); $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
 function showLastLog(justEnded){
   var l=loadLog(), box=$("lastLog");
   if(!l.length){ box.hidden=true; return; }
@@ -963,7 +1019,7 @@ $("agreeYes").addEventListener("click",function(){
   $("agree").hidden=true; $("setup").hidden=false; start();
 });
 $("agreeNo").addEventListener("click",function(){ $("agree").hidden=true; $("setup").hidden=false; });
-window.addEventListener("online",function(){ if(store.get("uppending","")==="1") uploadLog("signal back"); });
+window.addEventListener("online",function(){ if(store.get("uppending","")==="1") uploadLog("signal back"); else sendUnsent(); });
 $("saveLog").addEventListener("click",function(){ L("log","saved during trip"); saveLogLocal(); saveLogFile(S.log); });
 $("saveLastLog").addEventListener("click",function(){ saveLogFile(loadLog()); });
 $("changeRole").addEventListener("click",goSetup);
@@ -992,7 +1048,8 @@ document.addEventListener("visibilitychange",function(){
 window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });
 
 var q=new URLSearchParams(location.search);
-$("trip").value=(q.get("trip")||"123456").toUpperCase();   // 123456 is the default for testing (Ryan, 18 Oct); New code for privacy
+var DEFAULT_CODE = "234567";   // default for testing (Ryan, 19 Oct 03:11; was 123456); New code for privacy
+$("trip").value=(q.get("trip")||DEFAULT_CODE).toUpperCase();
 Array.prototype.forEach.call(document.querySelectorAll(".ver"),function(e){ e.textContent=VERSION; });
 fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
@@ -1001,10 +1058,11 @@ showLastLog(false);
 $("appWrap").hidden=!NATIVE;
 $("appBox").hidden = !!NATIVE || !/Android/i.test(navigator.userAgent);
 if(store.get("uppending","")==="1") setTimeout(function(){ uploadLog("page opened"); },2000);
+else if(unsent().length) setTimeout(sendUnsent,2000);
 $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 
-window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
+window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,twoTrucks:twoTrucks};
 })();
 </script>
 </body>

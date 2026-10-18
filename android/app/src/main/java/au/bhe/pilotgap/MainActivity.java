@@ -19,6 +19,7 @@ import android.provider.MediaStore;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.webkit.GeolocationPermissions;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -26,6 +27,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.view.View;
 import android.widget.Toast;
 
 import java.io.OutputStream;
@@ -85,6 +87,22 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageFinished(WebView v, String url) {
+                // After showing the saved copy, go back to normal loading so log upload and update check can use the network.
+                if (v.getSettings().getCacheMode() == WebSettings.LOAD_CACHE_ONLY) v.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
+                // Android closed the page's engine (usually to free memory). Without this the whole app crashes silently.
+                if (TripService.running) TripService.appClosed(MainActivity.this);
+                if (web == v) { setContentView(new View(MainActivity.this)); web = null; }
+                try { v.destroy(); } catch (Exception ignored) { }
+                recreate();
+                return true;
+            }
+
+            @Override
             public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
                 if (!r.isForMainFrame()) return;
                 if (!triedCache) {           // no signal: use the copy saved last time
@@ -128,6 +146,10 @@ public class MainActivity extends Activity {
         }
     }
 
+    boolean hasApproxOnly() {
+        return !hasLocation() && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
     boolean hasLocation() {
         return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
@@ -158,18 +180,19 @@ public class MainActivity extends Activity {
             l.getLatitude(), l.getLongitude(), l.hasAccuracy() ? l.getAccuracy() : 999f,
             l.hasSpeed() ? String.format(Locale.US, "%.2f", l.getSpeed()) : "null",
             l.hasBearing() ? String.format(Locale.US, "%.1f", l.getBearing()) : "null");
-        web.evaluateJavascript(js, null);
+        if (web != null) web.evaluateJavascript(js, null);
     }
 
-    void tick() { web.evaluateJavascript("window.__pgNativeTick&&window.__pgNativeTick()", null); }
+    void tick() { if (web != null) web.evaluateJavascript("window.__pgNativeTick&&window.__pgNativeTick()", null); }
 
     void event(String what) {
-        web.evaluateJavascript("window.__pgNativeEvent&&window.__pgNativeEvent('" + what.replace("'", "") + "')", null);
+        if (web != null) web.evaluateJavascript("window.__pgNativeEvent&&window.__pgNativeEvent('" + what.replace("'", "") + "')", null);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        if (web == null) return;
         web.onResume();
         web.resumeTimers();
     }
@@ -191,7 +214,7 @@ public class MainActivity extends Activity {
         if (TripService.running) TripService.appClosed(this);
         if (tts != null) tts.shutdown();
         if (tone != null) tone.release();
-        web.destroy();
+        if (web != null) web.destroy();
         super.onDestroy();
     }
 
@@ -203,7 +226,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface public void tripStart(String role) {
             runOnUiThread(() -> {
-                if (!hasLocation()) { askPermissions(); event("nolocation"); return; }
+                if (!hasLocation()) { askPermissions(); event(hasApproxOnly() ? "approxonly" : "nolocation"); return; }
                 Intent i = new Intent(MainActivity.this, TripService.class).putExtra("role", role);
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
                 askBatteryOnce();
@@ -255,7 +278,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public void reload() {
-            runOnUiThread(() -> { triedCache = false; web.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT); web.loadUrl(PAGE); });
+            runOnUiThread(() -> { if (web == null) return; triedCache = false; web.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT); web.loadUrl(PAGE); });
         }
     }
 }
