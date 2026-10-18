@@ -52,10 +52,18 @@ Ryan's decisions (20:18):
 - **Where logs go:** Ryan asked whether logs can come straight to him or be kept somewhere other than the phone. Open.
 - **3 (old unscrambled positions on the relay under code 1234):** not answered yet.
 
+### Decisions (v1.4.0, 20:45)
+
+- **1b, automatic:** logs go to Ryan's Google Drive without asking the driver each time, at End trip and **every 10 minutes while the phone is connected** ("must have good signal"; the relay connection is used as the signal test). Ryan: no per-upload permission needed.
+- **2a: positions in the log**, on every line during a trip (own position only; every phone sends its own log).
+- **Location agreement** (Ryan: "a simple I agree to share my location as part of my piloting / driver duties"). Claude's details, for Ryan to confirm: asked once per phone with the driver's name, again if the wording changes; recorded in every log; practice mode exempt. Not legal advice; Ryan may want it checked or added to employment paperwork.
+- **3b:** old unscrambled test positions on the relay left as they are.
+
 ### Faults found
 
 - **Settings button did nothing (fixed in `fe6b45f`).** Cause: `.panel{display:flex}` overrode the `hidden` attribute, so the panel was always shown at the bottom of the page and the button only toggled an attribute with no visible effect. Fix: `[hidden]{display:none!important}`. Lesson: test by looking at the screen at phone size, not only by checking element state in code. `tests/smoke.mjs` now checks visibility.
 - **Freshness judged by the sender's clock (fixed in 1.2.1, found in audit, 18 Oct 20:30).** Since 1.0.0, a position's age was worked out from the sending phone's clock. A phone whose clock ran 15 s or more slow would always show as "lost" on the others. Not seen in use (phone clocks are normally network-set). Fix: live messages are timed by when they arrive; stored messages replayed on connect keep the sender's time so an old position is not shown as fresh. Smoke test checks both.
+- **Real trip continued a practice log (found in testing, fixed before release of 1.4.0).** The log carried on across practice and real trips within 6 h, so the uploaded file was named after the practice role and "unknown" driver. Fix: a log continues only for the same kind of trip, role and driver.
 - **Practice speeds unrealistic (fixed in `2bf6d57`).** The pretend gap changed too fast, giving a lead pilot speed of 152 km/h. Slowed down.
 
 ### Not yet tested in the field

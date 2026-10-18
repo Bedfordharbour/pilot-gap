@@ -13,7 +13,12 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+const uploads = [];
 const srv = http.createServer((q, r) => {
+  if (q.method === 'POST' && q.url.startsWith('/upload')) {   // stand-in for the Google Apps Script receiver
+    let b = ''; q.on('data', c => b += c); q.on('end', () => { try { uploads.push(JSON.parse(b)); } catch (e) {}
+      r.writeHead(200, { 'content-type': 'application/json' }); r.end(JSON.stringify({ ok: true })); }); return;
+  }
   const f = path.join(root, decodeURIComponent(q.url.split('?')[0]).replace(/\/$/, '/index.html'));
   if (!f.startsWith(root) || !fs.existsSync(f)) { r.writeHead(404); return r.end(); }
   r.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' });
@@ -80,8 +85,15 @@ await p.click('#stop');
 await p.click('[data-role=rear]'); await p.uncheck('#practice');
 await p.fill('#trip', '123'); await p.click('#start'); await p.waitForTimeout(400);
 check('codes shorter than 4 are refused', await p.isVisible('#setupErr'), await p.textContent('#setupErr'));
-await p.fill('#trip', 'BHE777'); await p.click('#start');
+await p.evaluate(() => window.__pg.setUploadUrl('/upload'));
+await p.fill('#trip', 'BHE777'); await p.click('#start'); await p.waitForTimeout(300);
+check('agreement asked before the first real trip', await p.isVisible('#agree') && /I agree to share my location as part of my piloting \/ driver duties/.test(await p.textContent('#agreeText')));
+await p.screenshot({ path: path.join(root, 'tests', 'phone-agreement.png') });
+await p.click('#agreeYes'); await p.waitForTimeout(200);
+check('agreement needs a name', await p.isVisible('#agreeErr'));
+await p.fill('#agreeName', 'Test Driver'); await p.click('#agreeYes');
 await p.waitForFunction(() => window.__pg.S.key !== null, null, { timeout: 15000 });
+check('trip starts after agreeing', await p.isVisible('#gaps'));
 const tid = await p.evaluate(() => window.__pg.S.topicId);
 check('relay topic does not contain the trip code', !!tid && !tid.includes('BHE777') && tid.length === 24, tid);
 const sealed = await p.evaluate(() => window.__pg.seal({id:'x', trucks:2, t:Date.now(), ranges:{front:{min:400,max:1800}, mid:{min:10,max:90}, rear:{min:150,max:900}}}));
@@ -123,7 +135,16 @@ const logNow = await p.evaluate(() => window.__pg.logText(window.__pg.S.log));
 check('log records start, version and settings', /start\s+version 1\.\d+\.\d+/.test(logNow) && /cfg\s+from Truck 1: front 400–1800 m/.test(logNow), logNow.slice(0, 400));
 check('log records ignored messages', /unreadable message ignored|bad gap settings ignored/.test(logNow));
 check('log records gap changes', /gap\s+Rear gap:/.test(logNow));
-await p.click('#stop'); await p.waitForTimeout(400);
+check('log header records the agreement', /Location agreement: Test Driver, agreed \d{4}-\d\d-\d\d/.test(logNow), logNow.slice(0, 300));
+// own position on log lines (fake GPS fix)
+await p.evaluate(() => { const S = window.__pg.S; S.lastFix = { lat: -33.86150, lon: 121.89120, acc: 6, spd: 22, time: Date.now() }; });
+await p.evaluate(() => window.__pg.S.lastSample = 0); await p.waitForTimeout(1300);
+const logPos = await p.evaluate(() => window.__pg.logText(window.__pg.S.log));
+check('log lines carry this phone\'s position', /sample .*@-33\.86150,121\.89120/.test(logPos), logPos.split('\n').filter(l => /sample/.test(l)).slice(-1)[0]);
+await p.click('#stop'); await p.waitForTimeout(1200);
+const up = uploads[uploads.length - 1];
+check('End trip sends the log automatically', !!up && up.key === 'bhe-pg-7Kq2vX9m' && /^pilotgap-\d{8}-\d{4}-rear-TestDriver-[a-z0-9]+\.txt$/.test(up.name) && /End trip pressed/.test(up.text), up && up.name);
+check('start screen says the log was sent', /Sent to the office at/.test(await p.textContent('#lastLogUp')), await p.textContent('#lastLogUp'));
 check('End trip offers to save the log', await p.isVisible('#lastLog') && /Trip ended/.test(await p.textContent('#lastLogTitle')), await p.textContent('#lastLogTitle'));
 const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), p.click('#saveLastLog')]);
 check('Save trip log gives a file', !!dl && /^pilotgap-log-\d{8}-\d{4}-rear\.txt$/.test(dl.suggestedFilename()), dl && dl.suggestedFilename());
@@ -136,10 +157,15 @@ await p.goto('http://localhost:8765/'); await p.waitForTimeout(300);
 await p.route('**/?check=*', async r => { const res = await r.fetch(); const body = (await res.text()).replace(/var VERSION = "[^"]+"/, 'var VERSION = "9.9.9 (test)"'); await r.fulfill({ response: res, body }); });
 await p.evaluate(() => window.__pg.checkUpdate()); await p.waitForTimeout(800);
 check('newer version on website shows update box', await p.isVisible('#updateBox') && /9\.9\.9/.test(await p.textContent('#updateInfo')), await p.textContent('#updateInfo'));
+const before = uploads.length;
 await p.click('[data-role=lead]'); await p.check('#practice'); await p.click('#start'); await p.waitForTimeout(1500);
+check('practice mode needs no agreement', await p.isVisible('#gaps'));
 check('update banner during a trip, no reload by itself', await p.locator('#banners button', { hasText: 'Update now' }).count() === 1 && await p.isVisible('#gaps'));
 await p.screenshot({ path: path.join(root, 'tests', 'phone-update.png') });
 await p.unroute('**/?check=*');
+await p.click('#stop'); await p.waitForTimeout(800);
+check('practice trips are not sent', uploads.length === before, uploads.length - before);
+check('practice trip started its own log, not the real one', await p.evaluate(() => /-lead-/.test(localStorage.getItem('pg_logname')) && localStorage.getItem('pg_logkey').startsWith('P|')));
 check('no script errors', errors.length === 0, errors);
 
 await b.close(); srv.close();

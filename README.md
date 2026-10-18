@@ -36,6 +36,19 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 | `DEVLOG.md` | Design decisions, reasons, faults found and how they were fixed |
 | `TESTING.md` | Test checklist and known issues |
 | `tests/smoke.mjs` | Automated phone-size test, run before every push |
+| `server/upload-log.gs` | Google Apps Script that receives trip logs into Ryan's Google Drive |
+
+## Automatic log upload (set-up, once)
+
+Logs go to a folder called **Pilot Gap logs** in Ryan's Google Drive, through a small Google Apps Script.
+
+1. Open https://script.google.com signed in as the Google account that should hold the logs, and choose **New project**.
+2. Delete what is in `Code.gs` and paste in the whole of `server/upload-log.gs` from this repository. Name the project "Pilot Gap log receiver" and save.
+3. **Deploy → New deployment →** type **Web app**. Execute as: **Me**. Who has access: **Anyone**. Deploy, and allow the permissions Google asks for (it needs Drive to save the files).
+4. Copy the **Web app URL** (it ends in `/exec`) and give it to Claude, who puts it into `UPLOAD_URL` in `index.html` and releases a new version.
+5. Check: opening the URL in a browser shows `{"ok":true,"service":"Pilot Gap log receiver",...}`.
+
+If the script is ever redeployed as a *new* deployment, the URL changes and `UPLOAD_URL` must be updated. Use **Manage deployments → Edit → New version** to keep the same URL.
 
 ## Versions and backups
 

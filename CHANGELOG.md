@@ -2,6 +2,14 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.4.0 — 18 Oct 2026
+
+- **Location agreement** before the first real trip on each phone: the driver types their name and taps I agree. Wording includes "I agree to share my location as part of my piloting / driver duties". Name, time and wording version go into every trip log. Asked again if the wording changes. Not needed for practice mode.
+- **Positions in the trip log (2a):** every log line written during a trip ends with this phone's position (`@lat,lon`), including the 30-second samples.
+- **Automatic log upload (1b):** at End trip and every 10 minutes while connected to the relay, the whole log is sent to a Google Apps Script in Ryan's Google Drive (`server/upload-log.gs`), which keeps one file per trip and replaces it with each newer copy. If it can't send, it tries again when signal returns or the page is next opened. Status shown in Settings and on the start screen. Practice trips are not sent. **Off until the script address is put into `UPLOAD_URL`.**
+- Practice and real trips keep separate logs; a new log starts when the role or driver changes (found in testing: a real trip had continued a practice log).
+- Smoke test: 57 checks.
+
 ## 1.3.0 — 18 Oct 2026
 
 - **Update check (2a).** The page looks for a newer version on the website when it opens, at Start and every 10 minutes. If there is one, it shows "New version … Update now" on the start screen and as a banner during a trip. It never reloads by itself; updating mid-trip restarts the page and the driver taps Start again. Logged.

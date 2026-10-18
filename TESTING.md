@@ -29,6 +29,13 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Truck 1 ticks "Second truck on this trip"; all four phones show three gaps.
 - [ ] Truck 1 changes a gap in Settings; the pilots' phones show the new range within about 10 s.
 
+## Agreement and log upload
+
+- [ ] First real trip on a phone asks for the location agreement and a name; later trips don't.
+- [ ] After End trip, the start screen says "Sent to the office at hh:mm" and the file appears in the Pilot Gap logs folder in Google Drive.
+- [ ] Mid-trip, the file in Google Drive updates about every 10 minutes.
+- [ ] Out of signal at End trip: "Waiting to send", and it sends when signal returns or the page is next opened.
+
 ## Update check
 
 - [ ] After a new version is pushed, a phone left open shows "New version … Update now" within about 10–20 minutes (website copy can lag up to 10 min).

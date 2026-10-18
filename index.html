@@ -90,6 +90,8 @@ button:focus-visible,.role:focus-visible,input:focus-visible{outline:3px solid v
 .rrow span:first-child{font-weight:600}
 .rrow input{font-size:18px;padding:8px 10px}
 .rview{font-weight:600}
+.agreeTitle{font:700 24px/1.1 var(--display);text-transform:uppercase;letter-spacing:.03em;margin:4px 0 0}
+.agreeText{font-size:17px;line-height:1.5;margin:0;background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:12px}
 .logbox{border:1.5px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .logbox.ended{border-color:var(--warn);background:var(--warn-bg);color:var(--warn)}
 .logbox.ended .note{color:inherit}
@@ -119,6 +121,7 @@ code{font-size:14px;word-break:break-all}
     <div class="logbox" id="lastLog" hidden>
       <strong id="lastLogTitle">Last trip log</strong>
       <span class="note" id="lastLogInfo"></span>
+      <span class="note" id="lastLogUp"></span>
       <button id="saveLastLog" type="button">Save trip log</button>
     </div>
 
@@ -163,6 +166,22 @@ code{font-size:14px;word-break:break-all}
   </div>
 </section>
 
+<section id="agree" hidden>
+  <div class="wrap">
+    <h1><span>Pilot</span> Gap</h1>
+    <h2 class="agreeTitle">Location sharing agreement</h2>
+    <p id="agreeText" class="agreeText"></p>
+    <div class="field">
+      <label class="label" for="agreeName">Your name</label>
+      <input id="agreeName" type="text" autocomplete="name" maxlength="40">
+    </div>
+    <p id="agreeErr" class="err" hidden>Enter your name to agree.</p>
+    <button id="agreeYes" class="primary" type="button">I agree</button>
+    <button id="agreeNo" type="button">Not now</button>
+    <p class="note">Asked once on this phone, and again if the wording changes. Your name and the time you agreed are written in every trip log.</p>
+  </div>
+</section>
+
 <section id="run" hidden>
   <div class="wrap">
     <div class="top">
@@ -203,6 +222,10 @@ code{font-size:14px;word-break:break-all}
         <div id="liveView" class="rview"></div>
         <span class="note" id="liveSrc"></span>
       </div>
+      <div class="field">
+        <span class="label">Trip log</span>
+        <span class="note" id="upStatus"></span>
+      </div>
       <label class="check"><input id="keepOn2" type="checkbox"> <span>Keep screen on (a little more battery)</span></label>
       <label class="check"><input id="forceOn2" type="checkbox"> <span>Force screen on, blank video (more battery)</span></label>
       <button id="saveLog" type="button">Save trip log</button>
@@ -220,11 +243,16 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.3.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.4.0 (18 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
 var UPDATE_CHECK_MS = 600000;   // look for a newer version every 10 min
+var UPLOAD_URL = "";               // Ryan's Google Apps Script web app address (server/upload-log.gs); empty = upload off
+var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops random posts, it is not a password
+var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
+var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
+var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
 var LOG_MAX = 6000;           // trip log entries kept on the phone
 var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry continues the same log
 var STALE_MS = 15000;      // no update for 15 s = lost contact
@@ -247,6 +275,7 @@ function validCfg(c){ return c && (c.trucks===1||c.trucks===2) && c.ranges && va
 function loadMyCfg(){ try{ var c=JSON.parse(store.get("cfg","null")); if(validCfg(c)) return {trucks:c.trucks,ranges:c.ranges}; }catch(e){} return clone(DEFAULT_CFG); }
 
 var myId = Math.random().toString(36).slice(2,10);
+var phoneId = (function(){ var v=null; try{ v=localStorage.getItem("pg_phoneId"); if(!v){ v=Math.random().toString(36).slice(2,8); localStorage.setItem("pg_phoneId",v); } }catch(e){} return v||myId.slice(0,6); })();
 var S = {
   role: store.get("role",""), trip:"",
   myCfg: loadMyCfg(),               // what this phone sets when it is Truck 1
@@ -265,13 +294,21 @@ if(ROLES.indexOf(S.role)<0) S.role="";
 function loadLog(){ try{ var l=JSON.parse(store.get("lastlog","[]")); return Array.isArray(l)?l:[]; }catch(e){ return []; } }
 function saveLogLocal(){ try{ localStorage.setItem("pg_lastlog",JSON.stringify(S.log)); }catch(e){
   try{ S.log=S.log.slice(-Math.floor(S.log.length/2)); localStorage.setItem("pg_lastlog",JSON.stringify(S.log)); }catch(e2){} } }
+function posTag(){
+  if($("run").hidden) return "";
+  var me = S.practice ? S.peers[S.role] : S.lastFix, t = me ? (me.time||me.t) : 0;
+  return (me && Date.now()-t<60000) ? "  @"+me.lat.toFixed(5)+","+me.lon.toFixed(5) : "";
+}
 function L(ev,msg){
-  S.log.push([Date.now(),ev,msg||""]);
+  S.log.push([Date.now(),ev,(msg||"")+posTag()]);
   if(S.log.length>LOG_MAX) S.log.splice(0,S.log.length-LOG_MAX);
 }
 function stamp(t){ var d=new Date(t); function z(n){return ("0"+n).slice(-2);} return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+" "+z(d.getHours())+":"+z(d.getMinutes())+":"+z(d.getSeconds()); }
 function logText(log){
-  var head="Pilot Gap trip log\nSaved "+stamp(Date.now())+" from version "+VERSION+"\nTimes are this phone's local time.\n\n";
+  var a=agreement();
+  var head="Pilot Gap trip log\nSaved "+stamp(Date.now())+" from version "+VERSION+", phone "+phoneId+"\n"+
+    (a?"Location agreement: "+a.name+", agreed "+stamp(a.t)+" (wording v"+a.v+")\n":"Location agreement: none on this phone\n")+
+    "Times are this phone's local time. @lat,lon is this phone's own position when the line was written.\n\n";
   return head+log.map(function(e){ return stamp(e[0])+"  "+(e[1]+"        ").slice(0,8)+"  "+e[2]; }).join("\n")+"\n";
 }
 function logFileName(log){
@@ -321,6 +358,44 @@ function unseal(txt){
     return crypto.subtle.decrypt({name:"AES-GCM",iv:a.slice(0,12)},S.key,a.slice(12))
       .then(function(pt){ return JSON.parse(dec.decode(pt)); }).catch(function(){ return null; });
   }catch(e){ return Promise.resolve(null); }
+}
+
+/* ---------- location agreement ---------- */
+function agreement(){ try{ var a=JSON.parse(store.get("agree","null")); return (a && a.v===AGREE_V && a.name) ? a : null; }catch(e){ return null; } }
+function showAgree(){ $("agreeText").textContent=AGREE_TEXT; $("agreeErr").hidden=true; $("setup").hidden=true; $("agree").hidden=false; try{ window.scrollTo(0,0); }catch(e){} }
+
+/* ---------- automatic log upload (1b) ---------- */
+function logName(){ return store.get("logname",""); }
+function newLogName(){
+  var d=new Date(); function z(n){return ("0"+n).slice(-2);}
+  var a=agreement(), who=(a?a.name:"unknown").replace(/[^A-Za-z0-9]+/g,"").slice(0,20)||"unknown";
+  var n="pilotgap-"+d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+"-"+z(d.getHours())+z(d.getMinutes())+"-"+(S.role||"phone")+"-"+who+"-"+phoneId+".txt";
+  store.set("logname",n); return n;
+}
+function setUpStatus(txt){ S.upStatus=txt; var e=$("upStatus"); if(e) e.textContent=txt; refreshUpLine(); }
+function refreshUpLine(){
+  var f=$("lastLogUp"); if(!f) return;
+  var ok=+store.get("upok","0"), pend=store.get("uppending","")==="1", practice=store.get("logkey","").charAt(0)==="P";
+  f.textContent = !UPLOAD_URL ? "Automatic log upload is not set up yet." : practice ? "Practice trips are not sent." :
+    pend ? "Waiting to send to the office." : ok ? "Sent to the office at "+hhmm(ok)+"." : "";
+}
+function uploadLog(reason){
+  if(!UPLOAD_URL){ setUpStatus("Automatic log upload is not set up yet."); return; }
+  var log = $("run").hidden ? loadLog() : S.log, name=logName();
+  if(!log.length || !name || S.uploading) return;
+  if(navigator.onLine===false){ store.set("uppending","1"); setUpStatus("Log waiting to send (no signal)."); return; }
+  S.uploading=true;
+  var n=log.length;
+  fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:UPLOAD_KEY,name:name,text:logText(log)})})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      S.uploading=false;
+      if(j && j.ok){ store.set("uppending",""); store.set("upok",String(Date.now())); setUpStatus("Sent to the office at "+hhmm(Date.now())+" ("+n+" lines)."); if(reason!=="timer") L("upload","log sent ("+reason+")"); }
+      else { store.set("uppending","1"); setUpStatus("Log not sent: "+((j&&j.error)||"no reply")+". Will try again."); L("upload","refused: "+((j&&j.error)||"no reply")); }
+    }).catch(function(e){
+      S.uploading=false; store.set("uppending","1");
+      setUpStatus("Log waiting to send. Will try again."); L("upload","failed: "+((e&&e.message)||"network"));
+    });
 }
 
 /* ---------- update check (2a): never reloads by itself ---------- */
@@ -767,6 +842,7 @@ function start(){
   if(!S.role){ err.textContent="Choose this phone's role first."; err.hidden=false; return; }
   if(code.length<MIN_CODE && !practice){ err.textContent="Enter a trip code of at least "+MIN_CODE+" letters or numbers, or tap New code."; err.hidden=false; return; }
   if(!practice && !cryptoOk()){ err.textContent="This browser can't scramble messages. Open the page from https://bedfordharbour.github.io/pilot-gap/"; err.hidden=false; return; }
+  if(!practice && !agreement()){ showAgree(); return; }
   if(S.role==="truck" || practice){
     var c=readRanges("s_");
     if(!c){ err.textContent="Each gap needs a minimum smaller than its maximum."; err.hidden=false; return; }
@@ -780,8 +856,12 @@ function start(){
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
   S.peers={}; S.wasStale={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
-  var old=loadLog(); S.log = (old.length && Date.now()-old[old.length-1][0]<LOG_JOIN_MS) ? old : [];
+  // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
+  var ag0=agreement(), logKey=(S.practice?"P":"R")+"|"+S.role+"|"+(ag0?ag0.name:"");
+  var old=loadLog(); S.log = (old.length && Date.now()-old[old.length-1][0]<LOG_JOIN_MS && logName() && store.get("logkey","")===logKey) ? old : [];
+  if(!S.log.length){ newLogName(); store.set("logkey",logKey); store.set("uppending",""); }
   L("start","version "+VERSION+", role "+nm(S.role)+(S.practice?", PRACTICE":"")+", gaps "+cfgText(S.cfg)+(S.role==="truck"?" (set here)":" (defaults until Truck 1 connects)"));
+  var ag=agreement(); L("start","location agreement: "+(ag?ag.name+", agreed "+stamp(ag.t)+" (wording v"+ag.v+")":"none (practice)"));
   L("start","screen: keep on "+(S.keepOn?"on":"off")+", force "+(S.force?"on":"off")+" | "+navigator.userAgent);
   if(S.practice){ S.simT0=Date.now(); }
   else {
@@ -792,6 +872,8 @@ function start(){
   S.timers.push(setInterval(render,1000));
   checkUpdate();
   S.timers.push(setInterval(function(){ publishMine(true); publishCfg(); },10000));
+  if(!S.practice) S.timers.push(setInterval(function(){ if(S.connected) uploadLog("timer"); },UPLOAD_EVERY_MS));
+  setUpStatus(UPLOAD_URL ? (S.practice ? "Practice trips are not sent." : "Log will be sent every 10 minutes while connected.") : "Automatic log upload is not set up yet.");
   $("shareLink").textContent=shareUrl();
   fillRanges("l_",S.cfg);
   $("setup").hidden=true; $("run").hidden=false; $("settings").hidden=true; $("toggleSettings").textContent="Settings";
@@ -816,6 +898,7 @@ function showLastLog(justEnded){
   box.hidden=false; box.classList.toggle("ended",!!justEnded);
   $("lastLogTitle").textContent = justEnded ? "Trip ended. Save the trip log so any faults can be checked." : "Last trip log";
   $("lastLogInfo").textContent = stamp(l[0][0]).slice(0,16)+" to "+stamp(l[l.length-1][0]).slice(11,16)+", "+l.length+" entries";
+  refreshUpLine();
 }
 
 /* ---------- wiring ---------- */
@@ -834,7 +917,19 @@ $("toggleSettings").addEventListener("click",function(){
   if(!p.hidden){ renderRangePanel(); try{ p.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ p.scrollIntoView(); } }
   else { try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){ window.scrollTo(0,0); } }
 });
-$("stop").addEventListener("click",function(){ L("end","End trip pressed"); saveLogLocal(); teardown(true); $("run").hidden=true; $("setup").hidden=false; showLastLog(true); try{ window.scrollTo(0,0); }catch(e){} });
+$("stop").addEventListener("click",function(){
+  var wasPractice=S.practice;
+  L("end","End trip pressed"); saveLogLocal(); teardown(true); $("run").hidden=true; $("setup").hidden=false; showLastLog(true); try{ window.scrollTo(0,0); }catch(e){}
+  if(!wasPractice){ store.set("uppending","1"); uploadLog("end of trip"); }
+});
+$("agreeYes").addEventListener("click",function(){
+  var n=$("agreeName").value.trim();
+  if(n.length<2){ $("agreeErr").hidden=false; return; }
+  store.set("agree",JSON.stringify({name:n,t:Date.now(),v:AGREE_V}));
+  $("agree").hidden=true; $("setup").hidden=false; start();
+});
+$("agreeNo").addEventListener("click",function(){ $("agree").hidden=true; $("setup").hidden=false; });
+window.addEventListener("online",function(){ if(store.get("uppending","")==="1") uploadLog("signal back"); });
 $("saveLog").addEventListener("click",function(){ L("log","saved during trip"); saveLogLocal(); saveLogFile(S.log); });
 $("saveLastLog").addEventListener("click",function(){ saveLogFile(loadLog()); });
 $("changeRole").addEventListener("click",goSetup);
@@ -869,10 +964,11 @@ fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
 pickRole(S.role);
 showLastLog(false);
+if(store.get("uppending","")==="1") setTimeout(function(){ uploadLog("page opened"); },2000);
 $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 
-window.__pg={checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
+window.__pg={uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText};
 })();
 </script>
 </body>
