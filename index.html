@@ -527,8 +527,7 @@ function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($
 document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible" && !$("run").hidden) wakeLock(); });
 
 var q=new URLSearchParams(location.search);
-$("trip").value=(q.get("trip")||store.get("trip","")||"").toUpperCase();
-if(!$("trip").value) $("trip").value=randCode();
+$("trip").value=(q.get("trip")||"1234").toUpperCase();
 $("minGap").value=S.minGap; $("maxGap").value=S.maxGap;
 if(S.role) pickRole(S.role);
 
