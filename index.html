@@ -539,7 +539,7 @@ function start(){
   $("myRole").textContent=ROLE_NAMES[S.role]; $("truckMark").textContent="Truck";
   $("shareLink").textContent=shareUrl();
   $("minGap2").value=S.minGap; $("maxGap2").value=S.maxGap;
-  $("setup").hidden=true; $("run").hidden=false; $("settings").hidden=true;
+  $("setup").hidden=true; $("run").hidden=false; $("settings").hidden=true; $("toggleSettings").textContent="Settings";
   S.wakeTried=0; wakeLock();
   render();
 }
@@ -561,7 +561,12 @@ Array.prototype.forEach.call(document.querySelectorAll(".role"),function(b){ b.a
 $("newTrip").addEventListener("click",function(){ $("trip").value=randCode(); });
 $("start").addEventListener("click",start);
 $("mute").addEventListener("click",function(){ S.mutedUntil=Date.now()+60000; try{ speechSynthesis.cancel(); }catch(e){} render(); });
-$("toggleSettings").addEventListener("click",function(){ $("settings").hidden=!$("settings").hidden; });
+$("toggleSettings").addEventListener("click",function(){
+  var p=$("settings"); p.hidden=!p.hidden;
+  $("toggleSettings").textContent = p.hidden ? "Settings" : "Close settings";
+  if(!p.hidden){ try{ p.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){ p.scrollIntoView(); } }
+  else { try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){ window.scrollTo(0,0); } }
+});
 $("stop").addEventListener("click",function(){ teardown(true); $("run").hidden=true; $("setup").hidden=false; });
 $("changeRole").addEventListener("click",goSetup);
 $("keepOn2").addEventListener("change",function(){ setKeepOn($("keepOn2").checked); });
