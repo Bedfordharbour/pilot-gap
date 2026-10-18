@@ -2,6 +2,13 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.2 — 19 Oct 2026 (page) and Android app 1.0.2
+
+- **Trip restarts by itself in the app (Ryan, decision 3e-a, 19 Oct 04:23).** If the trip stopped without End trip less than 10 minutes ago (Android closed the page, the app was swiped away or killed), the next time the page loads it starts the same trip again with the same role and code, says "Pilot Gap restarted the trip", and logs it. End trip, Change role and Update now do not restart. Browser: no automatic restart.
+- App 1.0.2: when Android closes the page's engine, background tracking keeps running and the page is rebuilt, instead of stopping with a notification. Twice within a minute: stops with the "Pilot Gap stopped" notification as before.
+- Network-position limit stays at 100 m (Ryan, decision 3d, 19 Oct 04:23).
+- Smoke test: 84 checks.
+
 ## 1.5.1 — 19 Oct 2026 (page) and Android app 1.0.1
 
 Fault fixes from three review rounds and the first real-phone app log (Samsung, Truck 2, 18 Oct 22:29–22:46). No design changes.

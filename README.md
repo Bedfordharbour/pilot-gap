@@ -45,7 +45,7 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 
 `app/PilotGap.apk` (served at https://bedfordharbour.github.io/pilot-gap/app/PilotGap.apk). Android browsers see a "Download the app" box on the start screen.
 
-- **What it adds:** keeps tracking, the relay, alarms and the trip log going when the driver switches to Maps or takes a call. A "Pilot Gap is tracking" notification shows while a trip is on. Back keeps the trip running; **End trip** stops it.
+- **What it adds:** keeps tracking, the relay, alarms and the trip log going when the driver switches to Maps or takes a call. A "Pilot Gap is tracking" notification shows while a trip is on. Back keeps the trip running; **End trip** stops it. If the trip stops any other way (app closed or killed), opening the app within 10 minutes restarts it by itself.
 - **How it works:** a thin shell (`android/`) that shows this same page, plus a background service that feeds GPS into the page and keeps it running. Page changes reach the app without a new app version.
 - **Install:** open the link on the phone, allow "install unknown apps" for the browser, install, open, allow location and notifications, and allow "not optimised" for battery when asked.
 - **Build** (needs JDK 17+, Android SDK platform 34, Gradle 8.14): put `pilotgap-release.jks` and `signing.properties` (storePassword, keyAlias, keyPassword) in `~/.pilotgap/` or point `PILOTGAP_SIGNING` at their folder, then in `android/` run `gradle :app:assembleRelease`. Bump `versionCode` and `versionName` in `android/app/build.gradle` every release. The key is backed up in Ryan's Dropbox, `Claude/Projects/PilotGap/signing/`; never put it in this public repository. Certificate SHA-256 starts `5b2fdb16`.

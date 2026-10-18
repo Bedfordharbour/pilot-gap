@@ -187,6 +187,9 @@ await p.unroute('**/?check=*');
 await p.click('#stop'); await p.waitForTimeout(800);
 check('practice trips are not sent', uploads.length === before, uploads.length - before);
 check('practice trip started its own log, not the real one', await p.evaluate(() => /-lead-/.test(localStorage.getItem('pg_logname')) && localStorage.getItem('pg_logkey').startsWith('P|')));
+await p.evaluate(() => localStorage.setItem('pg_running', JSON.stringify({ role: 'rear', trip: 'RST123', t: Date.now() })));
+await p.reload(); await p.waitForTimeout(800);
+check('browser: no automatic restart', !(await p.isVisible('#gaps')));
 check('no script errors', errors.length === 0, errors);
 
 // ---- Inside the Android app (the app's side replaced by a stand-in that records calls) ----
@@ -241,6 +244,17 @@ await a.click('#saveLastLog'); await a.waitForTimeout(200);
 const saved = await a.evaluate(() => window.__calls.find(c => c[0] === 'saveLog'));
 check('app: Save trip log goes through the app', !!saved && /^pilotgap-log-/.test(saved[1]) && /running in the Android app 1\.0\.0/.test(saved[2]), saved && saved[1]);
 await a.screenshot({ path: path.join(root, 'tests', 'phone-app.png') });
+// automatic restart (3e-a): page reloaded in the app after the trip stopped without End trip
+check('app: End trip clears the running mark', await a.evaluate(() => localStorage.getItem('pg_running') === null));
+await a.evaluate(() => localStorage.setItem('pg_running', JSON.stringify({ role: 'truck', trip: 'RST123', t: Date.now() - 60000 })));
+await a.reload(); await a.waitForTimeout(800);
+const callsR = await a.evaluate(() => window.__calls.map(c => c[0] + (c[1] ? ':' + String(c[1]).slice(0, 40) : '')));
+check('app: trip restarts by itself after the page was closed mid-trip', await a.isVisible('#gaps') && callsR.includes('tripStart:truck') && callsR.some(c => /^say:Pilot Gap restarted/.test(c)), callsR);
+check('app: restart is logged', await a.evaluate(() => /restarted automatically/.test(window.__pg.logText(window.__pg.S.log)) && window.__pg.S.trip === 'RST123'));
+await a.click('#stop'); await a.waitForTimeout(300);
+await a.evaluate(() => localStorage.setItem('pg_running', JSON.stringify({ role: 'truck', trip: 'RST123', t: Date.now() - 20 * 60000 })));
+await a.reload(); await a.waitForTimeout(800);
+check('app: no restart when the trip stopped over 10 min ago', !(await a.isVisible('#gaps')));
 await ctxApp.close();
 // Android browser (not the app) sees the download box
 const ctxDroid = await b.newContext({ viewport: { width: 375, height: 812 }, userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36' });

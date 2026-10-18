@@ -252,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.1 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.2 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -270,6 +270,7 @@ var STALE_MS = 15000;      // no update for 15 s = lost contact
 var STORED_MAX_MS = 600000; // a stored relay message older than 10 min is from an old trip: ignore it
 var REPUBLISH_MS = 10000;   // re-send position and gap settings every 10 s
 var UPLOAD_TIMEOUT_MS = 30000;
+var RESUME_MS = 600000;   // app only: a trip that stopped without End trip less than 10 min ago restarts by itself (Ryan 3e-a, 19 Oct)
 var UNSENT_MAX = 3;         // older trip logs kept on the phone until they reach the office
 var ESTIMATE_MS = 120000;  // stop estimating 2 min after contact lost
 var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
@@ -444,6 +445,21 @@ function uploadLog(reason){
     });
 }
 
+/* ---------- automatic restart (3e-a): only in the app, after the page was closed mid-trip ---------- */
+function markRunning(){ store.set("running",JSON.stringify({role:S.role,trip:S.trip,t:Date.now()})); }
+function clearRunning(){ try{ localStorage.removeItem("pg_running"); }catch(e){} }
+function resumeIfStopped(){
+  if(!NATIVE) return false;
+  var r=null; try{ r=JSON.parse(store.get("running","null")); }catch(e){}
+  if(!r || ROLES.indexOf(r.role)<0 || !r.trip || r.trip==="PRACTICE" || !(Date.now()-r.t<RESUME_MS) || !agreement()){ clearRunning(); return false; }
+  $("trip").value=r.trip; $("practice").checked=false; pickRole(r.role);
+  start();
+  if($("run").hidden) return false;
+  L("start","restarted automatically: the trip had stopped without End trip at "+stamp(r.t));
+  S.lastSpeak={}; say("restart","Pilot Gap restarted the trip",0);
+  return true;
+}
+
 /* ---------- update check (2a): never reloads by itself ---------- */
 function verNum(v){ var m=/(\d+)\.(\d+)\.(\d+)/.exec(v||""); return m ? (+m[1])*1e6+(+m[2])*1e3+(+m[3]) : 0; }
 function checkUpdate(){
@@ -462,6 +478,7 @@ function showUpdate(){
   if(on) $("updateInfo").textContent="Version "+S.newVersion.split(" ")[0]+" is on the website. This phone has "+VERSION.split(" ")[0]+". Phones on different versions may not see each other.";
 }
 function doUpdate(){
+  clearRunning();
   L("update","driver tapped update"); saveLogLocal();
   var q=new URLSearchParams(location.search); q.set("v",String(Date.now()));
   if(S.trip && S.trip!=="PRACTICE") q.set("trip",S.trip);
@@ -870,7 +887,7 @@ function render(){
   }
   alarms(results,now);
   periodic(now);
-  if(now-(S.lastPersist||0)>10000){ S.lastPersist=now; saveLogLocal(); }
+  if(now-(S.lastPersist||0)>10000){ S.lastPersist=now; saveLogLocal(); if(!S.practice) markRunning(); }
 }
 
 /* ---------- range inputs (pre = "s_" setup screen, "l_" live settings) ---------- */
@@ -948,7 +965,7 @@ function start(){
     S.cfg=clone(c); S.cfgFrom = S.role==="truck" ? "self" : "practice";
   } else { S.cfg=clone(DEFAULT_CFG); S.cfgFrom="default"; S.cfgT=0; }
   S.trip=code||"PRACTICE"; S.practice=practice;
-  store.set("role",S.role); if(!practice) store.set("trip",S.trip);
+  store.set("role",S.role); if(!practice){ store.set("trip",S.trip); markRunning(); } else clearRunning();
   try{ if(!practice) history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
@@ -997,7 +1014,7 @@ function teardown(clearMine){
   S.connected=false; S.lastFix=null;
   wakeOff();
 }
-function goSetup(){ var wasPractice=S.practice; L("end","role change"); saveLogLocal(); teardown(true); if(!wasPractice){ store.set("uppending","1"); setTimeout(function(){ uploadLog("role change"); },0); } $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
+function goSetup(){ var wasPractice=S.practice; clearRunning(); L("end","role change"); saveLogLocal(); teardown(true); if(!wasPractice){ store.set("uppending","1"); setTimeout(function(){ uploadLog("role change"); },0); } $("run").hidden=true; $("setup").hidden=false; pickRole(S.role); showLastLog(false); }
 function showLastLog(justEnded){
   var l=loadLog(), box=$("lastLog");
   if(!l.length){ box.hidden=true; return; }
@@ -1024,6 +1041,7 @@ $("toggleSettings").addEventListener("click",function(){
   else { try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(e){ window.scrollTo(0,0); } }
 });
 $("stop").addEventListener("click",function(){
+  clearRunning();
   var wasPractice=S.practice;
   L("end","End trip pressed"); saveLogLocal(); teardown(true); $("run").hidden=true; $("setup").hidden=false; showLastLog(true); try{ window.scrollTo(0,0); }catch(e){}
   if(!wasPractice){ store.set("uppending","1"); uploadLog("end of trip"); }
@@ -1071,6 +1089,7 @@ fillRanges("s_",S.myCfg);
 $("keepOn").checked=S.keepOn; $("keepOn2").checked=S.keepOn; $("forceOn").checked=S.force; $("forceOn2").checked=S.force;
 pickRole(S.role);
 showLastLog(false);
+setTimeout(resumeIfStopped,0);
 $("appWrap").hidden=!NATIVE;
 $("appBox").hidden = !!NATIVE || !/Android/i.test(navigator.userAgent);
 if(store.get("uppending","")==="1") setTimeout(function(){ uploadLog("page opened"); },2000);

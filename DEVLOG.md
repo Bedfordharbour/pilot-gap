@@ -4,6 +4,18 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### Decisions (04:23)
+
+- **3e-a: restart the trip automatically** when Android closes the app's page mid-trip. Claude's details, for Ryan to confirm:
+  - app only, not the browser
+  - only if the trip stopped less than 10 minutes ago without End trip, Change role or Update now
+  - covers being swiped away and the whole app being killed too
+  - spoken "Pilot Gap restarted the trip", and logged
+
+  Risk Ryan accepted: a driver who meant to stop by closing the app gets the trip back if they reopen it within 10 minutes. End trip is the way to stop.
+- **3d: network-position limit 100 m** confirmed.
+- Not yet answered: 3a (trip code guessable from channel name), 3b (Drive log overwrite), 3c (agreement wording).
+
 ### Instruction (03:11)
 
 - Ryan: "Once you have finished the app run a full audit. and loop three times. fix any fault that doesn't need me. Create a new version and change the standard code to 234567 for both the app and the browser." Worked unattended. Each round was a separate reviewer that had not seen the fixes being made. Faults were fixed without asking. Anything that changes design, wording or the message format was left for Ryan (DriveCheck rule D-056).

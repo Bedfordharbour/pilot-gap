@@ -38,7 +38,7 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 
 ## Android app (real phone)
 
-- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.1 or later, app 1.0.1.
+- [ ] Download from the start screen box, install, open: the page shows **App** in the status row and version 1.5.2 or later, app 1.0.2.
 - [ ] Start a real trip: "Pilot Gap is tracking" notification appears; allow battery "not optimised" when asked.
 - [ ] Switch to Google Maps for 10 minutes: the other phones keep seeing this vehicle (no grey "last seen"), and alarms are still spoken.
 - [ ] Take or make a phone call during a trip: same as above.
@@ -48,6 +48,7 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Mid-trip with the app behind Maps for 10+ minutes: the file in Google Drive updates without opening the app.
 - [ ] Indoors or under cover: the vehicle keeps showing on the other phones (network position) instead of going grey.
 - [ ] Change font size in the phone's settings mid-trip: the trip carries on.
+- [ ] Swipe the app away mid-trip, reopen it within 10 min: the trip restarts by itself, says "Pilot Gap restarted the trip", same role and code.
 - [ ] Open the app in airplane mode (after it has opened once with signal): the saved page shows, not "no saved copy".
 - [ ] Two phones, one app phone behind Maps for 5+ minutes: in the log, the other phones' ages stay under 15 s and "starting a new connection" does not repeat.
 

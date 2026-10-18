@@ -33,6 +33,7 @@ public class TripService extends Service implements LocationListener {
     LocationManager lm;
     final Handler handler = new Handler(Looper.getMainLooper());
     long lastFixAt, lastGpsAt;
+    int missedTicks;
     static final long NET_AFTER_MS = 10000;
     static final float NET_MAX_ACC_M = 100f;   // only use a network position this good (Wi-Fi based, typically); for Ryan to confirm   // use a mobile-network position only when GPS has been quiet this long
 
@@ -40,7 +41,11 @@ public class TripService extends Service implements LocationListener {
         @Override public void run() {
             if (!running) return;
             MainActivity a = MainActivity.current.get();
-            if (a == null) { appClosed(TripService.this); return; }
+            if (a == null) {   // screen gone: allow a few seconds for it to be rebuilt (page restart) before calling it closed
+                if (++missedTicks >= 10) { appClosed(TripService.this); return; }
+                handler.postDelayed(this, 1000); return;
+            }
+            missedTicks = 0;
             a.tick();
             handler.postDelayed(this, 1000);
         }

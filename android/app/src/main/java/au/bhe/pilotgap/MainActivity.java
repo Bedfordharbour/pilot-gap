@@ -51,6 +51,7 @@ public class MainActivity extends Activity {
     ToneGenerator tone;
     boolean triedCache, cacheLoadStarted;
     static long lastRendererRestart;
+    boolean restartingPage;   // the page engine died and the screen is being rebuilt; the trip carries on
     int speakId;
 
     @Override
@@ -105,12 +106,12 @@ public class MainActivity extends Activity {
             @Override
             public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail d) {
                 // Android closed the page's engine (usually to free memory). Without this the whole app crashes silently.
-                if (TripService.running) TripService.appClosed(MainActivity.this);
+                // Ryan 3e-a (19 Oct): keep tracking running and rebuild the page; the page restarts the trip by itself.
                 if (web == v) { setContentView(new View(MainActivity.this)); web = null; }
                 try { v.destroy(); } catch (Exception ignored) { }
                 long now = System.currentTimeMillis();
-                if (now - lastRendererRestart > 60000) { lastRendererRestart = now; recreate(); }   // once a minute at most, so a page that keeps crashing can't loop
-                else finish();
+                if (now - lastRendererRestart > 60000) { lastRendererRestart = now; restartingPage = true; recreate(); }   // once a minute at most, so a page that keeps crashing can't loop
+                else { if (TripService.running) TripService.appClosed(MainActivity.this); finish(); }
                 return true;
             }
 
@@ -224,7 +225,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (current.get() == this) current = new WeakReference<>(null);
-        if (TripService.running) TripService.appClosed(this);
+        if (TripService.running && !restartingPage) TripService.appClosed(this);
         if (tts != null) tts.shutdown();
         if (tone != null) { ToneGenerator t = tone; tone = null; t.release(); }
         if (web != null) web.destroy();
