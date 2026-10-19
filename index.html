@@ -252,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.5 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.6 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -275,7 +275,8 @@ var REARM_MS = 10000;   // a gap must be back in range this long before its next
 var UPLOAD_TIMEOUT_MS = 30000;
 var RESUME_MS = 600000;   // app only: a trip that stopped without End trip less than 10 min ago restarts by itself (Ryan 3e-a, 19 Oct)
 var UNSENT_MAX = 3;         // older trip logs kept on the phone until they reach the office
-var ESTIMATE_MS = 120000;  // stop estimating 2 min after contact lost
+var ESTIMATE_MS = 120000;
+var PROJECT_MIN_SPD = 2;   // m/s: below this a vehicle is treated as stopped (heading is unreliable)  // stop estimating 2 min after contact lost
 var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
 var NAME  = {lead:"Lead pilot", truck:"Truck 1", truck2:"Truck 2", rear:"Rear pilot"};
 var SHORT = {lead:"Lead", truck:"Truck 1", truck2:"Truck 2", rear:"Rear"};
@@ -323,13 +324,14 @@ function L(ev,msg){
   S.log.push([Date.now(),ev,(msg||"")+posTag()]);
   if(S.log.length>LOG_MAX) S.log.splice(0,S.log.length-LOG_MAX);
 }
+function tzTag(t){ var o=-new Date(t).getTimezoneOffset(), a=Math.abs(o); return (o<0?"-":"+")+("0"+Math.floor(a/60)).slice(-2)+("0"+(a%60)).slice(-2); }   // trial 19 Oct: phones were 45 min apart (Perth vs Eucla time)
 function stamp(t){ var d=new Date(t); function z(n){return ("0"+n).slice(-2);} return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())+" "+z(d.getHours())+":"+z(d.getMinutes())+":"+z(d.getSeconds()); }
 function logText(log){
   var a=agreement();
   var head="Pilot Gap trip log\nSaved "+stamp(Date.now())+" from version "+VERSION+", phone "+phoneId+"\n"+
     (a?"Location agreement: "+a.name+", agreed "+stamp(a.t)+" (wording v"+a.v+")\n":"Location agreement: none on this phone\n")+
     "Times are this phone's local time. @lat,lon is this phone's own position when the line was written.\n\n";
-  return head+log.map(function(e){ return stamp(e[0])+"  "+(e[1]+"        ").slice(0,8)+"  "+e[2]; }).join("\n")+"\n";
+  return head+log.map(function(e){ return stamp(e[0])+" "+tzTag(e[0])+"  "+(e[1]+"        ").slice(0,8)+"  "+e[2]; }).join("\n")+"\n";
 }
 function logFileName(log){
   var t=log.length?log[log.length-1][0]:Date.now(), d=new Date(t);
@@ -539,19 +541,25 @@ function gapInfo(aRole, bRole, range, now){
   var ageA=Math.max(0,now-a.t), ageB=Math.max(0,now-b.t);
   var staleA=ageA>STALE_MS, staleB=ageB>STALE_MS;
   var raw=dist(a,b);
+  // Both positions are moved forward along their heading by speed x age before measuring
+  // (trial 19 Oct: positions up to 15-30 s old gave errors of about 300-365 m at highway speed).
+  var age = Math.max(staleA?ageA:0, staleB?ageB:0);
+  var canEst = !(staleA||staleB) || age<=ESTIMATE_MS;
+  var est = canEst ? dist(project(a,ageA), project(b,ageB)) : null;
   if(!staleA&&!staleB){
-    var st = raw<range.min ? "close" : raw>range.max ? "far" : "ok";
-    return {state:st, value:raw};
+    var st = est<range.min ? "close" : est>range.max ? "far" : "ok";
+    return {state:st, value:est, raw:raw};
   }
   var who = staleA&&staleB ? (ageA>ageB?aRole:bRole) : (staleA?aRole:bRole);
-  var age = Math.max(staleA?ageA:0, staleB?ageB:0);
-  var est = null;
-  if(age<=ESTIMATE_MS){
-    var projA = staleA ? (a.spd||0)*ageA/1000 : 0;
-    var projB = staleB ? (b.spd||0)*ageB/1000 : 0;
-    est = Math.max(0, raw+projA-projB);
-  }
-  return {state:"stale", value:raw, est:est, who:who, age:age};
+  return {state:"stale", value: est!=null ? est : raw, est:est, raw:raw, who:who, age:age};
+}
+// Where a vehicle should be now: its last position moved along its heading by speed x age.
+function project(p, ageMs){
+  if(!p || p.spd==null || p.hdg==null || !(p.spd>=PROJECT_MIN_SPD) || ageMs<=0) return p;
+  var d=p.spd*ageMs/1000, R=6371000, br=rad(p.hdg), la=rad(p.lat), lo=rad(p.lon), dr=d/R;
+  var la2=Math.asin(Math.sin(la)*Math.cos(dr)+Math.cos(la)*Math.sin(dr)*Math.cos(br));
+  var lo2=lo+Math.atan2(Math.sin(br)*Math.sin(dr)*Math.cos(la),Math.cos(dr)-Math.sin(la)*Math.sin(la2));
+  return {lat:la2*180/Math.PI, lon:lo2*180/Math.PI};
 }
 
 /* ---------- relay ---------- */
@@ -642,7 +650,7 @@ function trackLine(now,results){
   if(S.practice || now-(S.lastTrk||0)<TRACK_MS) return;
   S.lastTrk=now;
   var f=S.lastFix;
-  var gaps=results.map(function(x){ var g=x.info; return x.gap.key+"="+(g.value!=null?Math.round(g.value)+(g.state==="stale"?"s":""):"-"); }).join(" ");
+  var gaps=results.map(function(x){ var g=x.info; return x.gap.key+"="+(g.value!=null?Math.round(g.value)+(g.state==="stale"?"s":"")+(g.raw!=null&&Math.abs(g.raw-g.value)>=20?"(raw "+Math.round(g.raw)+")":""):"-"); }).join(" ");
   if(!f){ L("trk","no fix | "+gaps); return; }
   L("trk","±"+Math.round(f.acc||0)+"m "+kmh(f.spd).replace(" ","")+" h"+(f.hdg!=null?Math.round(f.hdg):"-")+" fix "+((now-f.time)/1000).toFixed(1)+"s "+(f.net?"net":"gps")+" | "+gaps);
 }
@@ -666,7 +674,7 @@ function periodic(now){
     L("relay","nothing received for 45 s (not even this phone's own messages): connection treated as dead");
     S.connected=false; S.relayEvtT=0;
   }
-  if(S.client && !S.connected && now-(S.relayEvtT||0)>30000){   // the relay library's own retry timer is not running
+  if(S.client && !S.connected && now-(S.relayEvtT||0)>(document.visibilityState==="visible"?30000:60000)){   // slower in the background (trial: 593 failed attempts)   // the relay library's own retry timer is not running
     // replace the client rather than calling reconnect(), which can leave two connections fighting over one id
     var old=S.client; S.client=null; L("relay","no relay activity for 30 s, starting a new connection");
     try{ old.removeAllListeners(); old.on("error",function(){}); old.end(true); }catch(e){}
@@ -707,6 +715,10 @@ function startGps(){
 /* ---------- Android app hooks (called by the app; absent in a browser) ---------- */
 window.__pgNativeFix=function(lat,lon,acc,spd,hdg,net){   // net: true for a mobile-network position (app 1.0.1+)
   if($("run").hidden || S.practice) return;
+  if(net){   // trial 19 Oct: network positions were ~10 km out (median 9.6 km) while claiming 100 m: never used for gaps or alarms
+    var now=Date.now(); if(now-(S.netIgnoredT||0)>60000){ S.netIgnoredT=now; L("gps","network position ignored (claimed ±"+Math.round(acc)+" m)"); }
+    return;
+  }
   onFix({coords:{latitude:lat,longitude:lon,accuracy:acc,speed:spd,heading:hdg},net:!!net});
 };
 window.__pgNativeTick=function(){ if(!$("run").hidden && document.visibilityState!=="visible") render(); };  // keeps gaps and alarms going behind other apps
@@ -718,6 +730,8 @@ window.__pgNativeEvent=function(what){
   if(what==="nolocation") S.gpsError="Allow location for Pilot Gap in the phone's settings, then press Start again.";
   if(what==="gpsoff") S.gpsError="The phone's GPS (location) is turned off. Turn it on in the quick settings.";
   if(what==="gpson") S.gpsError="";
+  if(what.indexOf("locsaver_on")===0) S.saverWarn="Battery saver is stopping GPS when the screen is off. Turn off Power saving for the trip.";
+  if(what==="locsaver_off") S.saverWarn="";
   if(what==="servicefailed") S.cryptoErr="Background tracking could not start. Keep this screen open, and check location is allowed for Pilot Gap.";
 };
 
@@ -841,7 +855,8 @@ function setGap(g,info){
   else if(info.state==="close"){ box.classList.add("bad"); sub.textContent="Too close · under by "+fmtMplain(r.min-info.value); }
   else {
     box.classList.add("stale");
-    sub.textContent=nm(info.who)+" last seen "+fmtAge(info.age)+" ago"+(info.est!=null?" · est. "+fmtMplain(info.est):" · too long to estimate");
+    if(info.est!=null) num.innerHTML="<small>est.</small> "+fmtM(info.est);   // estimate is the big number (trial 19 Oct: est. was within ~20 m, raw was 300 m+ out)
+    sub.textContent=nm(info.who)+" last seen "+fmtAge(info.age)+" ago"+(info.est!=null?" · estimate":" · too long to estimate, last known "+fmtMplain(info.raw));
   }
 }
 function renderRangePanel(){
@@ -906,6 +921,7 @@ function render(){
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
   if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
   if(S.cryptoErr) b.push({text:S.cryptoErr});
+  if(S.saverWarn && !S.practice) b.push({text:S.saverWarn});
   if(S.newVersion) b.push({text:"New version "+S.newVersion.split(" ")[0]+" is on the website. Update when stopped: the page restarts and you tap Start again.",update:true});
   if(!S.practice && S.role!=="truck" && S.cfgFrom==="default" && S.connected) b.push({text:"Using default gaps until Truck 1 connects."});
   if(now-S.dupRoleSeen<STALE_MS){ if(!S.dupLogged){ S.dupLogged=true; L("role","another phone is also "+nm(S.role)); } } else S.dupLogged=false;
@@ -1137,7 +1153,7 @@ $("copyLink").addEventListener("click",function(){
 function selectLink(){ try{ var r=document.createRange(); r.selectNodeContents($("shareLink")); var s=getSelection(); s.removeAllRanges(); s.addRange(r); $("copied").textContent="Selected, copy it now"; }catch(e){} }
 document.addEventListener("visibilitychange",function(){
   if($("run").hidden) return;
-  if(document.visibilityState==="visible"){ L("phone","back on this page | "+relayDiag(Date.now())); S.lastRx=Math.max(S.lastRx||0,Date.now()-RELAY_SILENT_MS+15000); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
+  if(document.visibilityState==="visible"){ L("phone","back on this page | "+relayDiag(Date.now())); if(S.client && !S.connected && Date.now()-(S.relayEvtT||0)>5000) S.relayEvtT=0;   /* reconnect straight away */ S.lastRx=Math.max(S.lastRx||0,Date.now()-RELAY_SILENT_MS+15000); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
   else { L("phone","going to background | "+relayDiag(Date.now())); L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
 });
 window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });

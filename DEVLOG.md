@@ -4,6 +4,34 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### Norseman–Caiguna run (09:52–14:10 Perth time) and decisions (17:07 Eucla time)
+
+Logs:
+- Truck 1, Ryan: app 1.0.3, battery saver on
+- Lead, Lawrie: app 1.0.3, battery saver off; two logs, from 06:24 and 09:54
+- Truck 2, Dave: Chrome, not the app
+
+Findings:
+- **Relay:** both Samsungs lost the relay within 45–90 s in the background and could not reconnect until brought back on screen. Lead: 0 of 141 attempts worked. Truck 1: 4 of 593. This caused all 26 "lost contact" alarms.
+- **Gap accuracy against the true gap,** worked out from both phones' own 2 s tracks:
+  - live readings: median error 19–49 m, 4% over 200 m
+  - causes of the big errors: network positions about 10 km out; positions 15–30 s old shown as live, about 300 m out
+  - grey readings showed raw distance, 3–6 km out, while the small "est." figure was within about 20 m
+- **GPS with the screen off:** battery saver stopped Truck 1's GPS. Research (AOSP source) found the foreground service does not exempt it; Lawrie, with battery saver off, kept full GPS.
+- **Coverage:** the gap in coverage was about 28 km (10:45–11:04 Perth). Truck 1's 58 km offline was the background fault.
+- **Time zones:** Truck 1 was on Eucla time, 45 min ahead of the lead.
+- **Research on moving the relay into the service:**
+  - the WebView renderer was not frozen
+  - a foreground service normally keeps network access
+  - so the block may be Samsung's power saving (unverified)
+  - therefore test with a native probe first (4b) before a 1.5–3 day rebuild
+
+Decisions:
+- 4a (battery saver off, Dave on the app, keep the app on screen): **no**.
+- 4b (test build): **yes**.
+- 4c (fault fixes): **yes**.
+- 4d (alarm from the estimate during a dropout): **no**.
+
 ### Rule (06:04)
 
 - **Ryan: "Stop creating versions every time I say something or log something, discuss first. Create once objective is clear and final ok is given."**

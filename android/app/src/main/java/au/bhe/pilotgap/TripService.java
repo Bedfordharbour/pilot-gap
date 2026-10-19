@@ -6,7 +6,9 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.location.GnssStatus;
 import android.location.Location;
@@ -64,6 +66,31 @@ public class TripService extends Service implements LocationListener {
         } catch (Exception e) { return "?"; }
     }
     static final long DIAG_MS = 60000;
+    BroadcastReceiver saverRx;
+    RelayProbe probe;
+
+    /** Battery saver's effect on location (Android: getLocationPowerSaveMode), in words. */
+    String locSaver() {
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (!pm.isPowerSaveMode()) return "off";
+            if (Build.VERSION.SDK_INT < 28) return "on";
+            switch (pm.getLocationPowerSaveMode()) {
+                case 0: return "on, location not limited";
+                case 1: return "on, GPS off when screen off";
+                case 2: return "on, all location off when screen off";
+                case 3: return "on, location for visible apps only";
+                case 4: return "on, location slowed when screen off";
+                default: return "on, mode " + pm.getLocationPowerSaveMode();
+            }
+        } catch (Exception e) { return "?"; }
+    }
+    void reportSaver() {
+        String m = locSaver();
+        boolean limits = m.startsWith("on,") && !m.contains("not limited");
+        sendEvent(limits ? "locsaver_on: battery saver " + m : "locsaver_off");
+        sendEvent("power: battery saver " + m);
+    }
 
     /** Once a minute: what the phone is doing, written to the trip log (Ryan, 19 Oct: more diagnostics). */
     final Runnable diag = new Runnable() {
@@ -77,6 +104,8 @@ public class TripService extends Service implements LocationListener {
                 + "; battery saver " + (pm.isPowerSaveMode() ? "ON" : "off")
                 + "; battery exempt " + (pm.isIgnoringBatteryOptimizations(getPackageName()) ? "yes" : "NO")
                 + (Build.VERSION.SDK_INT >= 23 ? "; doze " + (pm.isDeviceIdleMode() ? "ON" : "off") : "")
+ + "; location saver " + locSaver()
+                + "; probe " + (probe == null ? "-" : probe.summary())
                 + "; satellites " + (satsUsed < 0 ? "?" : satsUsed + " used of " + satsSeen + " seen")
                 + "; signal " + signalInfo()
                 + "; net " + netInfo(TripService.this));
@@ -138,13 +167,16 @@ public class TripService extends Service implements LocationListener {
         } catch (SecurityException | IllegalArgumentException e) {
             sendEvent("nogps");
         }
-        // Fallback when GPS drops out (indoors, under cover, stopped): seen on a real phone 18 Oct, 1-2 min gaps.
-        try {
-            if (lm.getAllProviders().contains(LocationManager.NETWORK_PROVIDER))
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000, 0, this, Looper.getMainLooper());
-        } catch (SecurityException | IllegalArgumentException ignored) { }
+        // Network positions are no longer used (trial 19 Oct: ~10 km out while claiming 100 m).
         handler.postDelayed(tick, 1000);
         handler.postDelayed(diag, DIAG_MS);
+        reportSaver();
+        try {
+            saverRx = new BroadcastReceiver() { @Override public void onReceive(Context c, Intent i) { reportSaver(); } };
+            registerReceiver(saverRx, new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED));
+        } catch (Exception ignored) { }
+        probe = new RelayProbe(msg -> handler.post(() -> sendEvent("probe: " + msg)));
+        probe.start();
         try {
             gnssCb = new GnssStatus.Callback() {
                 @Override public void onSatelliteStatusChanged(GnssStatus st) {
@@ -170,8 +202,7 @@ public class TripService extends Service implements LocationListener {
     @Override public void onLocationChanged(Location l) {
         long now = System.currentTimeMillis();
         if (LocationManager.GPS_PROVIDER.equals(l.getProvider())) { lastGpsAt = now; gpsFixes++; }
-        else if (now - lastGpsAt < NET_AFTER_MS) return;   // GPS is working: ignore the rougher network position
-        else if (!l.hasAccuracy() || l.getAccuracy() > NET_MAX_ACC_M) return;   // too rough: a cell-tower position can be km out and would set off false alarms
+        else return;   // only GPS positions are used (network positions are no longer requested, 1.0.5)
         if (!LocationManager.GPS_PROVIDER.equals(l.getProvider())) netFixes++;
         lastFixAt = now;
         MainActivity a = MainActivity.current.get();
@@ -198,6 +229,8 @@ public class TripService extends Service implements LocationListener {
         running = false;
         handler.removeCallbacks(tick);
         handler.removeCallbacks(diag);
+        if (probe != null) probe.stop();
+        if (saverRx != null) try { unregisterReceiver(saverRx); } catch (Exception ignored) { }
         if (gnssCb != null && lm != null) try { lm.unregisterGnssStatusCallback(gnssCb); } catch (Exception ignored) { }
         if (netCb != null) try { ((ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb); } catch (Exception ignored) { }
         if (lm != null) try { lm.removeUpdates(this); } catch (Exception ignored) { }

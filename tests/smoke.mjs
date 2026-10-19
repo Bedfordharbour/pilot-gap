@@ -259,7 +259,21 @@ check('app: log stays marked unsent during a trip after a 10-minute upload', awa
 await a.evaluate(() => window.__pgNativeFix(-33.8615 + 0.02, 121.8912, 1500, null, null)); await a.waitForTimeout(200);
 check('app: no speed worked out from a rough (network) position', await a.evaluate(() => window.__pg.S.lastFix.spd == null), await a.evaluate(() => window.__pg.S.lastFix.spd));
 await a.evaluate(() => window.__pgNativeFix(-33.8615, 121.8912, 5, null, null)); await a.evaluate(() => window.__pgNativeFix(-33.8615 + 0.0004, 121.8912, 60, null, null, true)); await a.waitForTimeout(200);
-check('app: no speed worked out from a network position (app marks it)', await a.evaluate(() => window.__pg.S.lastFix.spd == null && window.__pg.S.lastFix.net === true), await a.evaluate(() => window.__pg.S.lastFix));
+// projection (4c): a lead position 10 s old, moving north at 25 m/s, is moved 250 m forward before measuring
+const proj = await a.evaluate(() => { const G = window.__pg; const now = Date.now();
+  G.S.peers.truck = { lat: -33.8615, lon: 121.8912, spd: 0, hdg: 0, acc: 5, t: now };
+  G.S.peers.lead = { lat: -33.8615 + 1000/111320, lon: 121.8912, spd: 25, hdg: 0, acc: 5, t: now - 10000 };
+  const live = G.gapInfo('lead', 'truck', { min: 500, max: 2000 }, now);
+  G.S.peers.lead.t = now - 30000;
+  const stale = G.gapInfo('lead', 'truck', { min: 500, max: 2000 }, now);
+  return [Math.round(live.value), Math.round(live.raw), live.state, Math.round(stale.value), stale.state]; });
+check('positions moved forward by speed x age before measuring', Math.abs(proj[0] - 1250) < 5 && Math.abs(proj[1] - 1000) < 5 && proj[2] === 'ok', proj);
+check('lost contact: value is the estimate', Math.abs(proj[3] - 1750) < 5 && proj[4] === 'stale', proj);
+await a.evaluate(() => window.__pgNativeEvent('locsaver_on: battery saver on, GPS off when screen off')); await a.waitForTimeout(1200);
+check('app: battery saver limiting GPS is shown', /Battery saver is stopping GPS/.test(await a.textContent('#banners')), await a.textContent('#banners'));
+await a.evaluate(() => window.__pgNativeEvent('locsaver_off'));
+check('log lines carry the time zone', await a.evaluate(() => /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d [+-]\d{4}  /m.test(window.__pg.logText(window.__pg.S.log))));
+check('app: network position ignored, not used for gaps', await a.evaluate(() => window.__pg.S.lastFix.acc === 5 && /network position ignored/.test(window.__pg.logText(window.__pg.S.log))), await a.evaluate(() => window.__pg.S.lastFix));
 check('app: 10-minute upload runs from the tick, not a page timer', uploads.length === upBefore + 1 && /-truck-AppDriver-/.test(uploads[uploads.length - 1].name), uploads.length - upBefore);
 
 // relay connected but silent for 45 s (seen in the trial): treated as dead and replaced

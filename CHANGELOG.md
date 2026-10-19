@@ -2,6 +2,18 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.6 — 19 Oct 2026 (page) and Android app 1.0.5
+
+Ryan 4b and 4c (19 Oct 17:07 Eucla time), from the four logs of the Norseman–Caiguna run.
+- **Gaps allow for the age of each position.** Both vehicles' last positions are moved forward along their heading by speed × age before the gap is measured. In the logs, positions 15–30 s old shown as live were out by about 300–365 m, and gave 5 false "too far" alarms. A vehicle under 2 m/s (7 km/h) is treated as stopped.
+- **When contact is lost, the big number is the estimate,** marked "est.". The app's estimate was within about 20 m in the logs, while the raw distance to the last known spot was 300 m to several km out. After 2 minutes it shows "too long to estimate, last known …".
+- **Network positions are never used** for gaps or alarms. In the logs they were about 10 km out (median 9.6 km) while claiming ±100 m, and set off false "too far" alarms on both phones. App 1.0.5 no longer asks for them; the page also ignores them from older apps.
+- **Battery saver warning (app 1.0.5).** If battery saver is set to stop GPS when the screen is off, a banner tells the driver to turn off Power saving. The log records the mode at start, on every change and every minute.
+- **Test build, relay probe (app 1.0.5).** The background service keeps its own small connection to the relay (Android's own code, not the page) and pings it every 20 s. The once-a-minute line shows whether it stayed up. If it survives in the background while the page's connection dies, the relay should move into the service; if it also dies, the phone is blocking background network.
+- Relay retries in the background slowed to once a minute (593 failed attempts in one log); on return to the app it reconnects straight away.
+- Every log line now shows the phone's time zone (one phone was on Perth time, one on Eucla time, 45 min apart).
+- Smoke test: 97 checks.
+
 ## 1.5.5 — 19 Oct 2026 (page) and Android app 1.0.4
 
 Extra logging for the accuracy tests (Ryan 7a, 19 Oct 08:53). Nothing on screen changes.
