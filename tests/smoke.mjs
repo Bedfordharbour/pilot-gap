@@ -279,6 +279,14 @@ check('log lines carry the time zone', await a.evaluate(() => /^\d{4}-\d\d-\d\d 
 check('app: network position ignored, not used for gaps', await a.evaluate(() => window.__pg.S.lastFix.acc === 5 && /network position ignored/.test(window.__pg.logText(window.__pg.S.log))), await a.evaluate(() => window.__pg.S.lastFix));
 check('app: 10-minute upload runs from the tick, not a page timer', uploads.length === upBefore + 1 && /-truck-AppDriver-/.test(uploads[uploads.length - 1].name), uploads.length - upBefore);
 
+// new log file when full or on a new day (Ryan, 20 Oct): the old file is sent whole, the trip carries on in a new file
+const before2 = uploads.length;
+const oldName = await a.evaluate(() => window.__pg.logName());
+await a.evaluate(() => { window.__pg.S.connected = false; window.__pg.S.logDay = 19990101; window.__pg.periodic(Date.now()); });
+await a.waitForTimeout(800);
+const newName = await a.evaluate(() => window.__pg.logName());
+check('new day: previous log file sent whole and a new file started', uploads.length > before2 && uploads.some(u => u.name === oldName && /log closed: new day/.test(u.text)) && newName !== oldName && await a.evaluate(n => /new log file \(new day\), continues from /.test(window.__pg.logText(window.__pg.S.log)), null), [oldName, newName]);
+
 // relay connected but silent for 45 s (seen in the trial): treated as dead and replaced
 await a.evaluate(() => { const S = window.__pg.S; S.client = { removeAllListeners(){}, on(){}, end(){} }; S.connected = true; S.lastRx = Date.now() - 60000; window.__pg.periodic(Date.now()); });
 check('app: silent relay connection is treated as dead and replaced', await a.evaluate(() => /connection treated as dead/.test(window.__pg.logText(window.__pg.S.log)) && /starting a new connection/.test(window.__pg.logText(window.__pg.S.log))));

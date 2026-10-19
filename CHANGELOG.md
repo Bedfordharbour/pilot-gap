@@ -2,6 +2,14 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.8 — 20 Oct 2026 (page) and Android app 1.0.6
+
+Ryan, 20 Oct 07:19: "3b. 3c new log file. A trip is reset every day."
+- **New log file each day and when full.** The finished file is sent whole and kept in Drive; the trip carries on in a new file ("…-p2" if in the same minute). Before, the log was trimmed at 20,000 lines and each upload replaced the Drive copy, so the first hours of a long trip were lost (19 Oct, Truck 1). A trip started on a new day always starts a new file.
+- **App 1.0.6: the relay test connection works.** 1.0.5's test never connected: it did not tell the relay server its name, and logged no reason. It now uses the same route as the page (secure WebSocket to the relay, port 8884), checks the server certificate, and logs why it failed. Tested against a local relay; not yet tested against the public relay.
+- Older apps are told about app 1.0.6 (Download app update).
+- Smoke test: 101 checks.
+
 ## 1.5.7 — 19 Oct 2026 (page only)
 
 - **App update notice with tap to download** (Ryan, 19 Oct 22:16). The app shows the website page, so the page updates by itself but the app does not. Both phones ran app 1.0.3 all afternoon after 1.0.5 was out. Now, inside an older app, the start screen shows "New app version … Download app update". The link opens in the phone's browser, which downloads the file; then tap Install. The page also learns about a newer app from the website's update check.

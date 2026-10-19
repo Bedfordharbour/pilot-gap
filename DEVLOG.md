@@ -4,6 +4,16 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### Return trip, 20 Oct (06:22–06:39 Perth) and decisions (07:19)
+
+- Truck 1 on app 1.0.5 with battery saver off and the screen on. The page relay still died about 60–100 s after the app went to the background (06:26:11 background, 06:27:56 treated as dead; again 06:37). So battery saver and screen-off are ruled out as the cause.
+- **1.0.5's relay test never connected:** "connects 0 ok 2 failed" every minute. It was Claude's fault: no server name (SNI) was sent, and no failure reason was logged. Fixed in 1.0.6 (3b approved).
+- Relay round trip measured at about 0.45 s.
+- Lawrie used the Samsung browser (phone wwigux) and was invisible for 30 min while it was in the background.
+- **Fault found:** after 2 minutes lost, the screen shows "last known" distance (3–10 km) as the big number. Fix proposed (show "–"); not yet decided.
+- **3c: new log file**, "a trip is reset every day". Built in 1.5.8.
+- **3e:** the "vehicle order looks wrong" warnings at 06:24 and 06:35 were correct. Lawrie was not ahead on the return trip to Esperance.
+
 ### App update notice (22:16 Adelaide time)
 
 - Both phones were on app 1.0.3 all afternoon, so the 1.0.5 relay probe never ran. Ryan asked why the new app was not pushed for tap download.
