@@ -4,6 +4,25 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### Rule (06:04)
+
+- **Ryan: "Stop creating versions every time I say something or log something, discuss first. Create once objective is clear and final ok is given."**
+  - This replaces "push straight to live" (2b, 18 Oct) for anything new.
+  - Logs Ryan sends are analysed and discussed, not turned into a release.
+
+### Accuracy audit (08:37) and decisions (08:53)
+
+- Audit, in chat:
+  - GPS error per phone: 3–10 m in open sky; worse under cover and with network positions
+  - delay: 2 s send interval plus the mobile network and relay; 28 m per second at 100 km/h. In the 19 Oct test, phones differed by 74 m at speed
+  - straight line instead of road distance on bends
+  - the gap is phone to phone, not bumper to bumper
+  - setup mistakes
+- **7a yes: add all extra logging.** Built in 1.5.5 / app 1.0.4.
+- **7b (combination length): not required at the moment.**
+- **7c: decide on road distance after the bends test.**
+- **7d: run the parked side-by-side and known-distance tests first** (TESTING.md).
+
 ### Decisions (06:00), released as 1.5.4 / app 1.0.3
 
 - **Ryan on 5 and 6: "we have visual alarms so voice only needs to be once."** Built as:

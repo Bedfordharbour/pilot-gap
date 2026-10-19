@@ -24,6 +24,15 @@ It must print "All checks passed". Then look at `tests/phone.png`. It checks: th
 - [ ] Battery use over the trip, with and without Keep screen on.
 - [ ] Were alerts too frequent or too quiet?
 
+## Accuracy tests (Ryan 7d, 19 Oct)
+
+Use app 1.0.4 where possible, with Keep screen on ticked and phones on Pilot Gap (not switched away). Send the logs (they upload by themselves) and say which test and times.
+
+- [ ] **Parked side by side (10 min):** all phones together in the open, same trip code, one on each role. Expected: gaps 0–15 m. This shows GPS noise.
+- [ ] **Same, under a shed or near buildings (5 min):** shows how much cover makes it worse.
+- [ ] **Known distance (10 min):** two vehicles parked a measured distance apart, about 500 m in a straight line on open ground. Note how it was measured (odometer, map, or marks). This shows GPS plus calculation error with no delay.
+- [ ] **Placement (optional):** the same phone in two mounting spots for 5 min each, noting which is which. Compare the ± figures in the log.
+
 ## Two-truck field check
 
 - [ ] Truck 1 ticks "Second truck on this trip"; all four phones show three gaps.

@@ -236,6 +236,14 @@ check('app: double beep and vibration by the app', calls2.some(c => c.startsWith
 await a.evaluate(() => window.__pgNativeEvent('gpsoff')); await a.waitForTimeout(1200);
 check('app: GPS-off warning shown', /GPS \(location\) is turned off/.test(await a.textContent('#banners')), await a.textContent('#banners'));
 await a.evaluate(() => window.__pgNativeEvent('gpson'));
+await a.evaluate(() => { window.__pgNativeFix(-33.8615, 121.8912, 6, 22.2, 90); window.__pg.S.lastTrk = 0; });
+const leadT = await a.evaluate(() => window.__pg.seal({id:'L', lat:-33.8615+3000/111320, lon:121.8912, spd:22, hdg:0, acc:5, t:Date.now(), s:Date.now()}));
+await a.evaluate(t => window.__pg.onRelayMessage('lead', t, false), leadT);
+await a.evaluate(() => { window.__pg.S.lastSample = 0; }); await a.waitForTimeout(1300);
+const lg = await a.evaluate(() => window.__pg.logText(window.__pg.S.log).split('\n'));
+const trk = lg.filter(l => /\btrk\b/.test(l)).slice(-1)[0], smp = lg.filter(l => /sample/.test(l)).slice(-1)[0];
+check('app: track line every 2 s with own fix and shown gaps', /trk\s+±6m 80km\/h h90 fix \d+\.\ds gps \| front=\d+.*@-33\.86150,121\.89120/.test(trk), trk);
+check('app: sample carries round trip and per-vehicle accuracy and delay', /round trip/.test(smp) && /Lead=\d+s ±5m lag \d+\.\ds/.test(smp), smp);
 check('app: 30 s sample carries relay diagnostics', await a.evaluate(() => { window.__pg.S.lastSample = 0; window.__pgNativeTick(); return /relay (on|off|reconnecting|no client).*app net mobile internet ok/.test(window.__pg.logText(window.__pg.S.log)); }));
 await a.evaluate(() => window.__pg.S.keepOn = false); await a.click('#toggleSettings'); await a.check('#keepOn2'); await a.waitForTimeout(200);
 check('app: Keep screen on uses the app (phone does not lock)', await a.evaluate(() => window.__calls.some(c => c[0] === 'keepScreenOn' && c[1] === true)) && /Screen on \(app\)/.test(await a.textContent('#scrTxt')), await a.textContent('#scrTxt'));

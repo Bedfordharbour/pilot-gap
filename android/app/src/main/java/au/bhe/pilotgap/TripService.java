@@ -8,7 +8,11 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.location.GnssStatus;
 import android.location.Location;
+import android.telephony.CellSignalStrength;
+import android.telephony.SignalStrength;
+import android.telephony.TelephonyManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -39,6 +43,26 @@ public class TripService extends Service implements LocationListener {
     int missedTicks;
     int gpsFixes, netFixes, ticks;
     ConnectivityManager.NetworkCallback netCb;
+    GnssStatus.Callback gnssCb;
+    volatile int satsUsed = -1, satsSeen = -1;   // from the GPS chip (accuracy test 5e, Ryan 19 Oct)
+
+    /** Mobile signal: bars 0-4 and dBm where Android gives them. */
+    String signalInfo() {
+        try {
+            if (Build.VERSION.SDK_INT < 28) return "n/a";
+            TelephonyManager tm = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
+            SignalStrength ss = tm == null ? null : tm.getSignalStrength();
+            if (ss == null) return "unknown";
+            String out = "bars " + ss.getLevel() + "/4";
+            if (Build.VERSION.SDK_INT >= 29) {
+                for (CellSignalStrength c : ss.getCellSignalStrengths()) {
+                    int dbm = c.getDbm();
+                    if (dbm != Integer.MAX_VALUE) { out += " " + dbm + " dBm (" + c.getClass().getSimpleName().replace("CellSignalStrength", "") + ")"; break; }
+                }
+            }
+            return out;
+        } catch (Exception e) { return "?"; }
+    }
     static final long DIAG_MS = 60000;
 
     /** Once a minute: what the phone is doing, written to the trip log (Ryan, 19 Oct: more diagnostics). */
@@ -53,6 +77,8 @@ public class TripService extends Service implements LocationListener {
                 + "; battery saver " + (pm.isPowerSaveMode() ? "ON" : "off")
                 + "; battery exempt " + (pm.isIgnoringBatteryOptimizations(getPackageName()) ? "yes" : "NO")
                 + (Build.VERSION.SDK_INT >= 23 ? "; doze " + (pm.isDeviceIdleMode() ? "ON" : "off") : "")
+                + "; satellites " + (satsUsed < 0 ? "?" : satsUsed + " used of " + satsSeen + " seen")
+                + "; signal " + signalInfo()
                 + "; net " + netInfo(TripService.this));
             gpsFixes = 0; netFixes = 0; ticks = 0;
             handler.postDelayed(this, DIAG_MS);
@@ -120,6 +146,16 @@ public class TripService extends Service implements LocationListener {
         handler.postDelayed(tick, 1000);
         handler.postDelayed(diag, DIAG_MS);
         try {
+            gnssCb = new GnssStatus.Callback() {
+                @Override public void onSatelliteStatusChanged(GnssStatus st) {
+                    int used = 0, n = st.getSatelliteCount();
+                    for (int i = 0; i < n; i++) if (st.usedInFix(i)) used++;
+                    satsUsed = used; satsSeen = n;
+                }
+            };
+            lm.registerGnssStatusCallback(gnssCb, handler);
+        } catch (SecurityException | IllegalArgumentException ignored) { }
+        try {
             ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
             netCb = new ConnectivityManager.NetworkCallback() {
                 @Override public void onAvailable(Network n) { handler.post(() -> sendEvent("net: network available (" + netInfo(TripService.this) + ")")); }
@@ -162,6 +198,7 @@ public class TripService extends Service implements LocationListener {
         running = false;
         handler.removeCallbacks(tick);
         handler.removeCallbacks(diag);
+        if (gnssCb != null && lm != null) try { lm.unregisterGnssStatusCallback(gnssCb); } catch (Exception ignored) { }
         if (netCb != null) try { ((ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb); } catch (Exception ignored) { }
         if (lm != null) try { lm.removeUpdates(this); } catch (Exception ignored) { }
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();

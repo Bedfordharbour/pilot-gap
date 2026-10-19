@@ -2,6 +2,15 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.5 — 19 Oct 2026 (page) and Android app 1.0.4
+
+Extra logging for the accuracy tests (Ryan 7a, 19 Oct 08:53). Nothing on screen changes.
+- **Track line every 2 s** (`trk`): this phone's position, GPS accuracy, speed, heading, fix age, GPS or network, and the gaps shown at that moment. After a trip, the true gap at any second can be worked out from two phones' logs and compared with what was shown.
+- **30 s sample adds**, for each other vehicle, its GPS accuracy and its delay ("lag": arrival time minus send time; it includes any difference between the two phones' clocks). Also the relay round trip (phone → relay → phone, one clock): count, lowest, average and highest in ms.
+- **App 1.0.4, once-a-minute line adds** satellites (used in the fix, of those seen) and mobile signal (bars 0–4 and dBm).
+- Log size: kept on the phone raised to 20,000 lines (about 11 h). An 8 h trip log is about 1.5–2 MB (estimate), and the 10-minute upload sends the whole log, so mobile data use grows through the day.
+- Smoke test: 93 checks.
+
 ## 1.5.4 — 19 Oct 2026 (page) and Android app 1.0.3
 
 Ryan's decisions after the road test (19 Oct 06:00).

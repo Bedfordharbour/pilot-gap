@@ -252,7 +252,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.4 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.5 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -264,7 +264,8 @@ var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart===
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
-var LOG_MAX = 6000;           // trip log entries kept on the phone
+var LOG_MAX = 20000;          // trip log entries kept on the phone (about 11 h with the 2 s track lines; 1.5.5)
+var TRACK_MS = 2000;          // accuracy testing (Ryan 7a, 19 Oct): own position and shown gaps every 2 s
 var LOG_JOIN_MS = 6*3600000;  // a new start within 6 h of the last entry continues the same log
 var STALE_MS = 15000;      // no update for 15 s = lost contact
 var STORED_MAX_MS = 600000; // a stored relay message older than 10 min is from an old trip: ignore it
@@ -295,6 +296,7 @@ function loadMyCfg(){ try{ var c=JSON.parse(store.get("cfg","null")); if(validCf
 var myId = Math.random().toString(36).slice(2,10);
 var phoneId = (function(){ var v=null; try{ v=localStorage.getItem("pg_phoneId"); if(!v){ v=Math.random().toString(36).slice(2,8); localStorage.setItem("pg_phoneId",v); } }catch(e){} return v||myId.slice(0,6); })();
 var S = {
+  rtt:[],
   role: store.get("role",""), trip:"",
   myCfg: loadMyCfg(),               // what this phone sets when it is Truck 1
   cfg: clone(DEFAULT_CFG), cfgFrom:"default", cfgT:0,
@@ -603,11 +605,13 @@ function handleMsg(role, d, stored){
     at = Math.min(now, d.t+S.skew[role]);
   }
   if(role===S.role){
+    if(d.id===myId && !stored && typeof d.s==="number"){ S.rtt.push(Math.max(0,now-d.s)); if(S.rtt.length>60) S.rtt.shift(); }   // round trip phone -> relay -> phone, one clock
     if(d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
     return;
   }
   S.peers[role]={lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
-    acc:typeof d.acc==="number"?d.acc:null,t:at};
+    acc:typeof d.acc==="number"?d.acc:null,t:at,
+    lag: stored ? null : now-(typeof d.s==="number"?d.s:d.t)};   // arrival minus sender's send time: delay plus the two phones' clock difference
 }
 function publishMine(force){
   var f=S.lastFix; if(!f||!S.client||!S.connected) return;
@@ -626,6 +630,22 @@ function publishCfg(){
   seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
 }
 /* Diagnostics (Ryan, 19 Oct: relay sometimes off on return to the app): relay state, last received/sent, phone network */
+function rttText(){
+  var a=S.rtt.slice(); S.rtt=[];
+  if(!a.length) return "round trip -";
+  a.sort(function(x,y){return x-y;});
+  var sum=a.reduce(function(x,y){return x+y;},0);
+  return "round trip "+a.length+"x min "+a[0]+" avg "+Math.round(sum/a.length)+" max "+a[a.length-1]+" ms";
+}
+/* Track line every 2 s (accuracy test 5c/5f): this phone's fix and the gaps shown at that moment. Position is the @lat,lon on the line. */
+function trackLine(now,results){
+  if(S.practice || now-(S.lastTrk||0)<TRACK_MS) return;
+  S.lastTrk=now;
+  var f=S.lastFix;
+  var gaps=results.map(function(x){ var g=x.info; return x.gap.key+"="+(g.value!=null?Math.round(g.value)+(g.state==="stale"?"s":""):"-"); }).join(" ");
+  if(!f){ L("trk","no fix | "+gaps); return; }
+  L("trk","±"+Math.round(f.acc||0)+"m "+kmh(f.spd).replace(" ","")+" h"+(f.hdg!=null?Math.round(f.hdg):"-")+" fix "+((now-f.time)/1000).toFixed(1)+"s "+(f.net?"net":"gps")+" | "+gaps);
+}
 function relayDiag(now){
   var c=S.client, st = !c ? "no client" : S.connected ? "on" : c.reconnecting ? "reconnecting" : c.disconnecting ? "closing" : "off";
   var cn=navigator.connection, net = (navigator.onLine===false?"offline":"online")+(cn&&cn.effectiveType?" "+cn.effectiveType:"")+(cn&&cn.type?" "+cn.type:"");
@@ -851,7 +871,8 @@ function render(){
     var me=S.peers[S.role];
     L("sample",results.map(function(x){ return x.gap.key+"="+(x.info.value!=null?Math.round(x.info.value)+"m/"+x.info.state:x.info.state); }).join(" ")+
       " | me "+(me?kmh(me.spd)+" ±"+Math.round(me.acc||0)+"m":"no fix")+
-      " | ages "+chain().filter(function(r){return r!==S.role;}).map(function(r){ var p=S.peers[r]; return SHORT[r].replace(" ","")+"="+(p?Math.round((now-p.t)/1000)+"s":"-"); }).join(" ")+
+      " | ages "+chain().filter(function(r){return r!==S.role;}).map(function(r){ var p=S.peers[r]; return SHORT[r].replace(" ","")+"="+(p?Math.round((now-p.t)/1000)+"s"+(p.acc!=null?" ±"+Math.round(p.acc)+"m":"")+(p.lag!=null?" lag "+(p.lag/1000).toFixed(1)+"s":""):"-"); }).join(" ")+
+      (S.practice?"":" | "+rttText())+
       (S.practice?"":" | "+relayDiag(now)));
   }
   if(!S.practice){
@@ -917,6 +938,7 @@ function render(){
     });
   }
   alarms(results,now);
+  trackLine(now,results);
   periodic(now);
   if(now-(S.lastPersist||0)>10000){ S.lastPersist=now; saveLogLocal(); if(!S.practice) markRunning(); }
 }
@@ -1005,7 +1027,7 @@ function start(){
   try{ if(!practice) history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
-  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.alarmed={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
+  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.alarmed={}; S.rtt=[]; S.lastTrk=0; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
   S.lastRepub=0; S.lastUpload=0; S.lastSend=0; S.oldIgnored={};
   // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
