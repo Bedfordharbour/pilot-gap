@@ -2,6 +2,12 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.7 — 19 Oct 2026 (page only)
+
+- **App update notice with tap to download** (Ryan, 19 Oct 22:16). The app shows the website page, so the page updates by itself but the app does not. Both phones ran app 1.0.3 all afternoon after 1.0.5 was out. Now, inside an older app, the start screen shows "New app version … Download app update". The link opens in the phone's browser, which downloads the file; then tap Install. The page also learns about a newer app from the website's update check.
+- The version line shows the app version too, e.g. "1.5.7 · App 1.0.3".
+- Smoke test: 100 checks.
+
 ## 1.5.6 — 19 Oct 2026 (page) and Android app 1.0.5
 
 Ryan 4b and 4c (19 Oct 17:07 Eucla time), from the four logs of the Norseman–Caiguna run.

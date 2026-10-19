@@ -120,6 +120,13 @@ code{font-size:14px;word-break:break-all}
       <span class="note">Allow "install unknown apps" for your browser when asked.</span>
     </div>
 
+    <div class="logbox ended" id="appUpdBox" hidden>
+      <strong>New app version</strong>
+      <span class="note" id="appUpdInfo"></span>
+      <a class="applink" id="appUpdLink" href="#">Download app update</a>
+      <span class="note">The phone's browser downloads it. Open the file and tap Install (it updates over the old one; trips and settings are kept). Do this when stopped.</span>
+    </div>
+
     <div class="logbox ended" id="updateBox" hidden>
       <strong>New version available</strong>
       <span class="note" id="updateInfo"></span>
@@ -252,7 +259,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.6 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.7 (19 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -262,6 +269,8 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
+var APP_LATEST = "1.0.5";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
 var LOG_MAX = 20000;          // trip log entries kept on the phone (about 11 h with the 2 s track lines; 1.5.5)
@@ -471,6 +480,7 @@ function verNum(v){ var m=/(\d+)\.(\d+)\.(\d+)/.exec(v||""); return m ? (+m[1])*
 function checkUpdate(){
   try{
     fetch(location.pathname+"?check="+Date.now(),{cache:"no-store"}).then(function(r){ return r.ok?r.text():""; }).then(function(t){
+      var am=/var APP_LATEST = "([^"]+)"/.exec(t||""); if(am && am[1]!==APP_LATEST){ APP_LATEST=am[1]; showAppUpdate(); }   // a newer app announced on the website
       var m=/var VERSION = "([^"]+)"/.exec(t||""); if(!m) return;
       if(verNum(m[1])>verNum(VERSION)){
         if(S.newVersion!==m[1]){ S.newVersion=m[1]; L("update","newer version on the website: "+m[1]); }
@@ -478,6 +488,14 @@ function checkUpdate(){
       }
     }).catch(function(){});
   }catch(e){}
+}
+/* App update (Ryan 19 Oct 22:16): the app only shows the website page, so a new app file must be installed by hand. Tell app users when one is out. */
+function appVer(){ try{ return NATIVE ? String(NATIVE.appVersion()) : ""; }catch(e){ return "?"; } }
+function showAppUpdate(){
+  var mine=appVer(), on = !!NATIVE && verNum(APP_LATEST)>verNum(mine);
+  $("appUpdBox").hidden=!on; $("appUpdLink").href=APP_DL;
+  if(on){ $("appUpdInfo").textContent="App "+APP_LATEST+" is out. This phone has app "+mine+". The page updates by itself; the app does not."; if(S.appUpdLogged!==APP_LATEST){ S.appUpdLogged=APP_LATEST; L("update","app "+APP_LATEST+" available, this phone has "+mine); } }
+  Array.prototype.forEach.call(document.querySelectorAll(".ver"),function(e){ e.textContent=VERSION+(NATIVE?" · App "+mine:""); });
 }
 function showUpdate(){
   var on=!!S.newVersion; $("updateBox").hidden=!on;
@@ -1168,6 +1186,7 @@ pickRole(S.role);
 showLastLog(false);
 setTimeout(resumeIfStopped,0);
 $("appWrap").hidden=!NATIVE;
+showAppUpdate();
 $("appBox").hidden = !!NATIVE || !/Android/i.test(navigator.userAgent);
 if(store.get("uppending","")==="1") setTimeout(function(){ uploadLog("page opened"); },2000);
 else if(unsent().length) setTimeout(sendUnsent,2000);

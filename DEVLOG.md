@@ -4,6 +4,12 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-19
 
+### App update notice (22:16 Adelaide time)
+
+- Both phones were on app 1.0.3 all afternoon, so the 1.0.5 relay probe never ran. Ryan asked why the new app was not pushed for tap download.
+- **Gap Claude missed:** inside the app the download box was hidden, and nothing told app users that a new app file existed. The page updated itself; the app could not.
+- Fixed in 1.5.7: `APP_LATEST` in the page, an update box for older apps, and the link on github.com so the app hands it to the phone's browser to download. Ryan's "4b" taken as the OK for showing the app version.
+
 ### Norseman–Caiguna run (09:52–14:10 Perth time) and decisions (17:07 Eucla time)
 
 Logs:

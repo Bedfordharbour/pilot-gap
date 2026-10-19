@@ -49,7 +49,7 @@ Practice mode runs three pretend vehicles, with no GPS or other phones needed.
 - **How it works:** a thin shell (`android/`) that shows this same page, plus a background service that feeds GPS into the page and keeps it running. Page changes reach the app without a new app version.
 - **Install:** open the link on the phone, allow "install unknown apps" for the browser, install, open, allow location and notifications, and allow "not optimised" for battery when asked.
 - **Build** (needs JDK 17+, Android SDK platform 34, Gradle 8.14): put `pilotgap-release.jks` and `signing.properties` (storePassword, keyAlias, keyPassword) in `~/.pilotgap/` or point `PILOTGAP_SIGNING` at their folder, then in `android/` run `gradle :app:assembleRelease`. Bump `versionCode` and `versionName` in `android/app/build.gradle` every release. The key is backed up in Ryan's Dropbox, `Claude/Projects/PilotGap/signing/`; never put it in this public repository. Certificate SHA-256 starts `5b2fdb16`.
-- **Publish:** copy `android/app/build/outputs/apk/release/app-release.apk` to `app/PilotGap-<version>.apk` and `app/PilotGap.apk`, add a CHANGELOG line, push.
+- **Publish:** copy `android/app/build/outputs/apk/release/app-release.apk` to `app/PilotGap-<version>.apk` and `app/PilotGap.apk`, set `APP_LATEST` in `index.html` to the new version (older apps then show "Download app update"), add a CHANGELOG line, push.
 
 ## Automatic log upload (set-up, once)
 

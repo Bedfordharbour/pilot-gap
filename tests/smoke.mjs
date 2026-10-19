@@ -33,6 +33,7 @@ const check = (name, ok, got) => { console.log((ok ? 'PASS ' : 'FAIL ') + name +
 
 await p.goto('http://localhost:8765/');
 check('no update box when the website has the same version', !(await p.isVisible('#updateBox')));
+check('browser: no app-update box', !(await p.isVisible('#appUpdBox')));
 check('relay library loads from repo', await p.evaluate(() => typeof mqtt) === 'object');
 const code0 = await p.inputValue('#trip');
 check('default trip code is 234567', code0 === '234567', code0);
@@ -212,6 +213,8 @@ await ctxApp.addInitScript(() => {
 const a = await ctxApp.newPage(); a.on('pageerror', e => errors.push('app: ' + e.message));
 await a.goto('http://localhost:8765/'); await a.waitForTimeout(300);
 check('app: download box hidden inside the app', !(await a.isVisible('#appBox')));
+check('app: older app is told a new app is out, with a tap-to-download link that opens outside the app', await a.isVisible('#appUpdBox') && /App 1\.0\.\d+ is out\. This phone has app 1\.0\.0/.test(await a.textContent('#appUpdInfo')) && /^https:\/\/github\.com\/Bedfordharbour\/pilot-gap\/raw\/main\/app\/PilotGap\.apk$/.test(await a.getAttribute('#appUpdLink', 'href')), await a.textContent('#appUpdInfo'));
+check('app: start screen shows the app version', /· App 1\.0\.0/.test(await a.textContent('.ver')), await a.textContent('.ver'));
 await a.evaluate(() => window.__pg.setUploadUrl('/upload'));
 await a.click('[data-role=truck]'); await a.click('#start'); await a.waitForTimeout(200);
 await a.fill('#agreeName', 'App Driver'); await a.click('#agreeYes');
