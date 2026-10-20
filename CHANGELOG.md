@@ -2,6 +2,11 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.5.9 — 20 Oct 2026 (page: app notice only) and Android app 1.0.7
+
+- **App 1.0.7: relay test connection tries the relay's IPv4 address first.** On the road (20 Oct 07:48–08:00, app 1.0.6) every attempt went to the relay's IPv6 address and was refused ("ECONNREFUSED", port 8884), while the page connected normally. It now tries IPv4 addresses first, then IPv6, and logs which address worked. Tested against a local relay.
+- Older apps are told about app 1.0.7.
+
 ## 1.5.8 — 20 Oct 2026 (page) and Android app 1.0.6
 
 Ryan, 20 Oct 07:19: "3b. 3c new log file. A trip is reset every day."

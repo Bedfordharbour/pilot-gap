@@ -4,6 +4,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -34,7 +36,7 @@ class RelayProbe implements Runnable {
     Thread thread;
     int pingsOk, pingsFailed, connects, connectFails;
     long lastRtt = -1, upSince;
-    String lastError = "";
+    String lastError = "", via = "";
     long lastErrorLogged;
     final SecureRandom rnd = new SecureRandom();
 
@@ -93,8 +95,18 @@ class RelayProbe implements Runnable {
     @Override public void run() {
         while (run) {
             try {
-                Socket raw = new Socket();
-                raw.connect(new InetSocketAddress(host, port), TIMEOUT_MS);
+                // Try IPv4 first, then the rest (20 Oct, app 1.0.6: the relay's IPv6 address refused port 8884 on mobile)
+                InetAddress[] all = InetAddress.getAllByName(host);
+                java.util.List<InetAddress> order = new java.util.ArrayList<>();
+                for (InetAddress ad : all) if (ad instanceof Inet4Address) order.add(ad);
+                for (InetAddress ad : all) if (!(ad instanceof Inet4Address)) order.add(ad);
+                Socket raw = null; Exception last = null;
+                for (InetAddress ad : order) {
+                    Socket t = new Socket();
+                    try { t.connect(new InetSocketAddress(ad, port), TIMEOUT_MS); raw = t; via = ad.getHostAddress(); break; }
+                    catch (Exception ce) { last = ce; try { t.close(); } catch (Exception ignored) { } }
+                }
+                if (raw == null) throw last != null ? last : new Exception("no address for " + host);
                 Socket s = raw;
                 if (tls) {
                     SSLSocket ss = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault()).createSocket(raw, host, port, true);   // tells the server its name (SNI)
@@ -126,7 +138,7 @@ class RelayProbe implements Runnable {
                 byte[] ack = wsRead(in, o);
                 if (ack.length < 4 || (ack[0] & 0xff) != 0x20 || ack[3] != 0) throw new Exception("relay refused (" + (ack.length >= 4 ? ack[3] : -1) + ")");
                 synchronized (this) { up = true; upSince = System.currentTimeMillis(); connects++; lastError = ""; }
-                sink.log("connected");
+                sink.log("connected via " + via);
                 while (run) {
                     Thread.sleep(PING_MS);
                     long t0 = System.currentTimeMillis();

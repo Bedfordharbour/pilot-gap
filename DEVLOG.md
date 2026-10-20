@@ -14,6 +14,12 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 - **3c: new log file**, "a trip is reset every day". Built in 1.5.8.
 - **3e:** the "vehicle order looks wrong" warnings at 06:24 and 06:35 were correct. Lawrie was not ahead on the return trip to Esperance.
 
+### App 1.0.6 on the road (07:48–08:00 Perth)
+
+- 1.0.6 installed at 07:48 through the new update box.
+- **Its test connection was refused every time** because it went to the relay's IPv6 address. The page's own connection worked, so this was the probe's fault, not the relay's. Fixed in 1.0.7 (IPv4 first); part of the approved 4b test.
+- The page relay again died 105 s and 104 s after the app went to the background (07:49:36 → 07:51:21, 07:54:44 → 07:56:28).
+
 ### App update notice (22:16 Adelaide time)
 
 - Both phones were on app 1.0.3 all afternoon, so the 1.0.5 relay probe never ran. Ryan asked why the new app was not pushed for tap download.

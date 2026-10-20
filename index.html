@@ -259,7 +259,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.8 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.5.9 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -269,7 +269,7 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
-var APP_LATEST = "1.0.6";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_LATEST = "1.0.7";           // bump with every new app/PilotGap.apk (README: Publish)
 var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
