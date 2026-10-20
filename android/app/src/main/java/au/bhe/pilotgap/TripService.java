@@ -104,7 +104,7 @@ public class TripService extends Service implements LocationListener {
                 + "; battery exempt " + (pm.isIgnoringBatteryOptimizations(getPackageName()) ? "yes" : "NO")
                 + (Build.VERSION.SDK_INT >= 23 ? "; doze " + (pm.isDeviceIdleMode() ? "ON" : "off") : "")
  + "; location saver " + locSaver()
-                + "; app relay " + (MainActivity.relay == null ? "not used" : MainActivity.relay.summary())
+                + "; app relay " + relaySummary()
                 + "; satellites " + (satsUsed < 0 ? "?" : satsUsed + " used of " + satsSeen + " seen")
                 + "; signal " + signalInfo()
                 + "; net " + netInfo(TripService.this));
@@ -112,6 +112,8 @@ public class TripService extends Service implements LocationListener {
             handler.postDelayed(this, DIAG_MS);
         }
     };
+
+    static String relaySummary() { NativeRelay r = MainActivity.relay; return r == null ? "not used" : r.summary(); }
 
     static String netInfo(Context c) {
         try {
@@ -227,7 +229,7 @@ public class TripService extends Service implements LocationListener {
         running = false;
         handler.removeCallbacks(tick);
         handler.removeCallbacks(diag);
-        MainActivity.stopRelay();   // trip over: close the relay connection too
+        if (MainActivity.current.get() == null) MainActivity.stopRelay();   // app closed: close the relay too (otherwise the page ends it)
         if (saverRx != null) try { unregisterReceiver(saverRx); } catch (Exception ignored) { }
         if (gnssCb != null && lm != null) try { lm.unregisterGnssStatusCallback(gnssCb); } catch (Exception ignored) { }
         if (netCb != null) try { ((ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb); } catch (Exception ignored) { }

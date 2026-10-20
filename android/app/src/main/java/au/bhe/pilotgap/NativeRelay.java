@@ -43,6 +43,7 @@ class NativeRelay implements Runnable {
     final SecureRandom rnd = new SecureRandom();
     final Object writeLock = new Object();
     volatile boolean run = true, up;
+    int id;
     volatile Socket sock;
     volatile OutputStream out;
     volatile long lastRx;
@@ -161,14 +162,15 @@ class NativeRelay implements Runnable {
             String why = null;
             try {
                 Socket raw = open(), s = raw;
+                sock = raw;   // closed on any failure below
                 if (tls) {
                     SSLSocket ss = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault()).createSocket(raw, host, port, true);
+                    sock = ss;
                     ss.setSoTimeout(TIMEOUT_MS);
                     ss.startHandshake();
                     if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, ss.getSession())) throw new Exception("certificate does not match " + host);
                     s = ss;
                 }
-                sock = s;
                 s.setSoTimeout(TIMEOUT_MS);
                 OutputStream o = s.getOutputStream();
                 InputStream raw_in = s.getInputStream();
@@ -213,6 +215,8 @@ class NativeRelay implements Runnable {
                         String payload = new String(body, off, body.length - off, StandardCharsets.UTF_8);
                         synchronized (this) { msgsIn++; }
                         ls.onMessage(topic, payload, (b & 1) != 0);
+                    } else if (type == 9) {   // SUBACK: 0x80 means the relay refused the subscription
+                        if (body.length >= 3 && (body[2] & 0xff) == 0x80) throw new Exception("relay refused the subscription");
                     } else if (type == 13) {   // PINGRESP
                         synchronized (this) { pingsOk++; lastRtt = System.currentTimeMillis() - pingSent; }
                     }

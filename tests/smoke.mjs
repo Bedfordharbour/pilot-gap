@@ -327,7 +327,7 @@ await ctxR.addInitScript(() => {
   window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'), beep: rec('beep'), beepTwice: rec('beepTwice'),
     keepScreenOn: rec('keepScreenOn'), netInfo: () => 'mobile internet ok', vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
     appVersion: () => '1.1.0', hasLocation: () => true,
-    relayStart: rec('relayStart'), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayUp: () => true };
+    relayStart: rec('relayStart', 7), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayStopId: rec('relayStopId'), relayUp: () => true, relayRunning: () => true };
   localStorage.setItem('pg_agree', JSON.stringify({ name: 'Relay Driver', t: Date.now(), v: 1 }));
 });
 const r = await ctxR.newPage(); r.on('pageerror', e => errors.push('app: ' + e.message));
@@ -347,7 +347,7 @@ check('app relay: message from the app reaches the gap', /\d/.test(await r.textC
 await r.evaluate(() => { window.__pgRelay('close', 'test'); window.__pg.S.lastRx = Date.now() - 120000; window.__pg.periodic(Date.now()); });
 check('app relay: on a drop the page waits for the app to reconnect (no page reconnects)', await r.evaluate(() => window.__pg.S.client && window.__pg.S.client.app && window.__calls.filter(c => c[0] === 'relayStart').length === 1 && /connection closed \(app\)/.test(window.__pg.logText(window.__pg.S.log))));
 await r.evaluate(() => window.__pgRelay('connect')); await r.click('#stop'); await r.waitForTimeout(600);
-check('app relay: End trip clears this vehicle and stops the app relay', await r.evaluate(() => window.__calls.some(c => c[0] === 'relayPublish' && c[1].endsWith('/truck') && c[2] === '') && window.__calls.some(c => c[0] === 'relayStop')));
+check('app relay: End trip clears this vehicle and stops the app relay', await r.evaluate(() => window.__calls.some(c => c[0] === 'relayPublish' && c[1].endsWith('/truck') && c[2] === '') && window.__calls.some(c => c[0] === 'relayStopId' && c[1] === 7)));
 // 4c: a page opened on the start screen keeps the stored log; lines written there are added, not a replacement
 const nBefore = await r.evaluate(() => JSON.parse(localStorage.getItem('pg_lastlog')).length);
 await r.reload(); await r.waitForTimeout(500);

@@ -14,6 +14,16 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 - **3c: new log file**, "a trip is reset every day". Built in 1.5.8.
 - **3e:** the "vehicle order looks wrong" warnings at 06:24 and 06:35 were correct. Lawrie was not ahead on the return trip to Esperance.
 
+### Relay test result and decision (08:26–08:48 Perth)
+
+- **App 1.0.7's test connection stayed up 597 s straight** (08:26:08–08:36), pinging every 20 s through two spells behind other apps. In the same spells the page's relay died at 08:27:58 and 08:32:51. Conclusion: background traffic is not blocked by the phone; the WebView's connection is what dies.
+- **Ryan: "4a fix. 4c go. 4d yes."**
+  - 4a: built as app 1.1.0 / page 1.6.0.
+  - 4c: the start-screen log wipe, fixed.
+  - 4d: 0–500 m between trucks was on purpose.
+- An independent review of the new relay code found 2 serious faults: a stale stop killing the new relay, and a diagnostics crash. Both were fixed before release.
+- Still open: the lost-contact display, 3a "gap then" vs 3b "last known".
+
 ### App 1.0.6 on the road (07:48–08:00 Perth)
 
 - 1.0.6 installed at 07:48 through the new update box.

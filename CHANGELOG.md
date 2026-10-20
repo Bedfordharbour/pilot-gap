@@ -2,6 +2,20 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.6.0 — 20 Oct 2026 (page) and Android app 1.1.0
+
+Ryan, 20 Oct 08:48: "4a fix. 4c go."
+- **The app carries the relay connection (app 1.1.0).** Field test 20 Oct 08:26–08:36: a connection made by the app stayed up for 10 minutes behind other apps, while the page's own connection died about 100 s into every background spell. Now the page hands its messages (still scrambled by the page) to the app, which keeps one connection to the relay (secure WebSocket, IPv4 first), pings it every 15 s, and reconnects by itself (after 2, 5, 10, then every 15 s). Browser phones and older apps keep the page's own connection.
+- **Start screen no longer wipes the stored log** (4c). A page reloaded by the browser and then updated saved an empty log over the stored one, and the next upload replaced the Drive file (Lawrie, 20 Oct: 05:49–07:44 lost from Drive).
+- Found by an independent review and fixed before release:
+  - a late "stop" from an old trip could kill the new trip's relay with no reconnect; each relay now has its own id, and the page restarts the app's relay if it is not running for 60 s
+  - a rare crash in the once-a-minute diagnostics
+  - the "clear my position" message on End trip is now sent before tracking stops
+  - safer passing of text to the page
+  - sockets closed on a failed connect
+  - a refused subscription is now noticed
+- Smoke test: 107 checks. App relay tested against a local relay (retained and live messages, long messages, reconnect after a relay restart). Not yet tested against the public relay on a phone.
+
 ## 1.5.9 — 20 Oct 2026 (page: app notice only) and Android app 1.0.7
 
 - **App 1.0.7: relay test connection tries the relay's IPv4 address first.** On the road (20 Oct 07:48–08:00, app 1.0.6) every attempt went to the relay's IPv6 address and was refused ("ECONNREFUSED", port 8884), while the page connected normally. It now tries IPv4 addresses first, then IPv6, and logs which address worked. Tested against a local relay.

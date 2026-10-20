@@ -614,10 +614,11 @@ function appRelay(){ return !!(NATIVE && typeof NATIVE.relayStart==="function");
 function connectAppRelay(){
   var c={ app:true, reconnecting:true,
     publish:function(t,p,o){ try{ if(!NATIVE.relayPublish(t,String(p),!!(o&&o.retain))) S.connected=false; }catch(e){} },
-    end:function(){ try{ NATIVE.relayStop(); }catch(e){} }, removeAllListeners:function(){}, on:function(){}, subscribe:function(){} };
+    end:function(){ try{ if(typeof NATIVE.relayStopId==="function" && c.id) NATIVE.relayStopId(c.id); else NATIVE.relayStop(); }catch(e){} },   // only this trip's relay
+    removeAllListeners:function(){}, on:function(){}, subscribe:function(){} };
   S.client=c; S.relayEvtT=Date.now();
   L("relay","connecting through the app");
-  try{ NATIVE.relayStart(TOPIC_BASE+S.topicId+"/+","pg_"+myId); }catch(e){ L("relay","app relay could not start: "+e.message); }
+  try{ c.id=NATIVE.relayStart(TOPIC_BASE+S.topicId+"/+","pg_"+myId); }catch(e){ L("relay","app relay could not start: "+e.message); }
 }
 window.__pgRelay=function(ev,a,b,c){
   var cl=S.client; if(!cl || !cl.app) return;
@@ -735,7 +736,13 @@ function periodic(now){
   }
   if(S.connected && now-(S.lastUpload||S.tripStart)>=UPLOAD_EVERY_MS){ S.lastUpload=now; uploadLog("timer"); }
   Object.keys(S.aborts||{}).forEach(function(k){ var a=S.aborts[k]; if(a && a.ac && now-a.t>UPLOAD_TIMEOUT_MS){ try{ a.ac.abort(); }catch(e){} delete S.aborts[k]; } });   // page timers may be frozen: abort a hung upload here too
-  if(S.client && S.client.app) return;   // the app keeps its own connection alive and reconnects by itself
+  if(S.client && S.client.app){   // the app keeps its own connection alive and reconnects by itself
+    var running=true, up=true;
+    try{ running=NATIVE.relayRunning(); up=NATIVE.relayUp(); }catch(e){}
+    if(S.connected && !up){ S.connected=false; S.client.reconnecting=true; S.relayEvtT=now; L("relay","app relay reports down | "+relayDiag(now)); }
+    if(!running && now-(S.relayEvtT||0)>60000){ L("relay","app relay not running, starting it again"); connectAppRelay(); }   // backstop: never left without a relay
+    return;
+  }
   if(S.client && S.connected && now-(S.lastRx||now)>RELAY_SILENT_MS){   // trial 19 Oct: the connection died in the app's background and nothing noticed for 15 min
     L("relay","nothing received for 45 s (not even this phone's own messages): connection treated as dead");
     S.connected=false; S.relayEvtT=0;
@@ -1145,13 +1152,13 @@ function start(){
 function teardown(clearMine){
   nativeScreen(false);
   S.timers.forEach(clearInterval); S.timers=[];
-  if(NATIVE){ try{ NATIVE.tripEnd(); }catch(e){} }
-  if(S.watchId!=null){ try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){} S.watchId=null; }
   if(S.client){
     var c=S.client; S.client=null;
-    try{ if(clearMine && S.connected) c.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){}
+    try{ if(clearMine && S.connected) c.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){}   // before tripEnd, while the relay is surely running
     setTimeout(function(){ try{ c.end(true); }catch(e){} },300);
   }
+  if(NATIVE){ try{ NATIVE.tripEnd(); }catch(e){} }
+  if(S.watchId!=null){ try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){} S.watchId=null; }
   S.connected=false; S.lastFix=null;
   wakeOff();
 }
