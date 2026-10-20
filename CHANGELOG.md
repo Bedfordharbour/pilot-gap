@@ -2,6 +2,17 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.7.0 — 20 Oct 2026 (page) and Android app 1.2.0
+
+Ryan, 20 Oct: "Merge lost and remove gone", "2a yes. 2b yes or the other vehcle presses end trip or exits the program. 2c a2".
+- **One lost-contact display, for any length of time.** Big number on the left: "Estimated gap" (where both vehicles should be now, from last speed). On the right: "Last seen", how long ago, and how far this vehicle has driven since then (only goes up). Bottom line: "Lost contact". Replaces the growing "last known" 3–10 km figure shown after 2 minutes.
+- **A lost vehicle is no longer removed after 10 minutes.** It stays until this trip ends, or until that vehicle presses End trip or closes the app ("Lead pilot ended the trip at 14:02").
+- **Estimate check in the log.** When contact returns, the log records the estimate, the actual gap and the difference, so we can measure how good the estimate is.
+- **One update banner during a trip (A2).** If the app is out of date, the banner says "Update the app" and how; the page-update box is hidden, because the new app brings the newest page.
+- **App 1.2.0 sends the log uploads (2a)**, so uploads work behind other apps. Browser phones and older apps upload as before.
+- **App 1.2.0 tells the other phones when it is closed** mid-trip, so they show "ended the trip" instead of lost.
+- Smoke test: 111 checks. Not yet tested on a phone: the app upload against Google's real upload address, and the closed-app message.
+
 ## 1.6.0 — 20 Oct 2026 (page) and Android app 1.1.0
 
 Ryan, 20 Oct 08:48: "4a fix. 4c go."

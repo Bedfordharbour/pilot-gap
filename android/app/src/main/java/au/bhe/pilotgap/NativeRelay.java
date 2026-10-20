@@ -44,6 +44,7 @@ class NativeRelay implements Runnable {
     final Object writeLock = new Object();
     volatile boolean run = true, up;
     int id;
+    volatile String ownTopic;   // this vehicle's channel, cleared if the app is closed mid-trip
     volatile Socket sock;
     volatile OutputStream out;
     volatile long lastRx;

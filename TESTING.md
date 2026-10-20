@@ -62,6 +62,11 @@ Use app 1.0.4 where possible, with Keep screen on ticked and phones on Pilot Gap
 - [ ] Open the app in airplane mode (after it has opened once with signal): the saved page shows, not "no saved copy".
 - [ ] Two phones, one app phone behind Maps for 5+ minutes: in the log, the other phones' ages stay under 15 s and "starting a new connection" does not repeat.
 
+- [ ] App 1.2.0, lost contact (turn one phone's data off for 3+ minutes): the other phone shows "Estimated gap", "Last seen … min ago", "… m ago" rising, "Lost contact". When data returns, the log has an "estimate" line.
+- [ ] App 1.2.0, close the app mid-trip: within a few seconds the other phones show "… ended the trip at hh:mm", not lost.
+- [ ] App 1.2.0, behind Maps for 10+ minutes: the log file in Google Drive updates (upload sent by the app).
+- [ ] Phone on an old app mid-trip: only the red "Update the app" banner shows, no page-update box.
+
 ## Update check
 
 - [ ] After a new version is pushed, a phone left open shows "New version … Update now" within about 10–20 minutes (website copy can lag up to 10 min).

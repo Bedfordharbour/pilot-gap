@@ -49,6 +49,12 @@ public class MainActivity extends Activity {
 
     static int relaySeq;
     static void stopRelay() { NativeRelay r = relay; relay = null; if (r != null) new Thread(r::stop).start(); }
+    /** App closed mid-trip (Ryan, 20 Oct): tell the other phones this vehicle has gone, then close the relay. */
+    static void closeRelayClearing() {
+        NativeRelay r = relay; relay = null;
+        if (r == null) return;
+        new Thread(() -> { String t = r.ownTopic; if (t != null) r.publish(t, "", true); try { Thread.sleep(300); } catch (InterruptedException ignored) { } r.stop(); }).start();
+    }
     /** Stop only the relay the page started (id), so a late stop from an old trip cannot kill the new one. */
     static synchronized void stopRelay(int id) { NativeRelay r = relay; if (r != null && r.id == id) stopRelay(); }
 
@@ -239,6 +245,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (current.get() == this) current = new WeakReference<>(null);
         if (TripService.running && !restartingPage) TripService.appClosed(this);
+        if (!restartingPage) closeRelayClearing();
         if (tts != null) tts.shutdown();
         if (tone != null) { ToneGenerator t = tone; tone = null; t.release(); }
         if (web != null) web.destroy();
@@ -295,6 +302,38 @@ public class MainActivity extends Activity {
             NativeRelay r = relay; return r != null && r.publish(topic, payload, retain);
         }
         @JavascriptInterface public void relayStop() { stopRelay(); }
+        @JavascriptInterface public void relayOwnTopic(String topic) { NativeRelay r = relay; if (r != null) r.ownTopic = topic; }
+
+        /** Log upload sent by the app (1.2.0), so it works behind other apps. Answers window.__pgHttp(id, status, text). */
+        @JavascriptInterface public void httpPost(int id, String url, String body) {
+            new Thread(() -> {
+                int code = 0; String text = "";
+                try {
+                    String u = url; boolean post = true;
+                    for (int hop = 0; hop < 4; hop++) {
+                        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
+                        c.setInstanceFollowRedirects(false);
+                        c.setConnectTimeout(15000); c.setReadTimeout(30000);
+                        if (post) {
+                            c.setRequestMethod("POST"); c.setDoOutput(true);
+                            c.setRequestProperty("Content-Type", "text/plain;charset=utf-8");
+                            try (OutputStream o = c.getOutputStream()) { o.write(body.getBytes(StandardCharsets.UTF_8)); }
+                        }
+                        code = c.getResponseCode();
+                        if (code >= 300 && code < 400 && c.getHeaderField("Location") != null) {   // Google Apps Script answers a POST with a redirect to fetch with GET
+                            u = new java.net.URL(new java.net.URL(u), c.getHeaderField("Location")).toString();
+                            post = code == 307 || code == 308;
+                            c.disconnect(); continue;
+                        }
+                        java.io.InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+                        if (in != null) { java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream(); byte[] buf = new byte[8192]; int n; while ((n = in.read(buf)) > 0) b.write(buf, 0, n); text = b.toString("UTF-8"); }
+                        c.disconnect();
+                        break;
+                    }
+                } catch (Exception e) { code = 0; text = e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : ""); }
+                toPage("window.__pgHttp&&window.__pgHttp(" + id + "," + code + "," + q(text.length() > 2000 ? text.substring(0, 2000) : text) + ")");
+            }, "pilotgap-upload").start();
+        }
         @JavascriptInterface public void relayStopId(int id) { stopRelay(id); }
         @JavascriptInterface public boolean relayUp() { NativeRelay r = relay; return r != null && r.up; }
         @JavascriptInterface public boolean relayRunning() { NativeRelay r = relay; return r != null && r.run; }

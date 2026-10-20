@@ -229,7 +229,7 @@ public class TripService extends Service implements LocationListener {
         running = false;
         handler.removeCallbacks(tick);
         handler.removeCallbacks(diag);
-        if (MainActivity.current.get() == null) MainActivity.stopRelay();   // app closed: close the relay too (otherwise the page ends it)
+        if (MainActivity.current.get() == null) MainActivity.closeRelayClearing();   // app closed: tell the others, close the relay (otherwise the page ends it)
         if (saverRx != null) try { unregisterReceiver(saverRx); } catch (Exception ignored) { }
         if (gnssCb != null && lm != null) try { lm.unregisterGnssStatusCallback(gnssCb); } catch (Exception ignored) { }
         if (netCb != null) try { ((ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb); } catch (Exception ignored) { }
@@ -242,6 +242,7 @@ public class TripService extends Service implements LocationListener {
 
     /** The app screen was closed (swiped away or killed) during a trip: stop and say so loudly. */
     static void appClosed(Context c) {
+        MainActivity.closeRelayClearing();
         c.stopService(new Intent(c, TripService.class));
         channels(c);
         NotificationManager nm = (NotificationManager) c.getSystemService(NOTIFICATION_SERVICE);

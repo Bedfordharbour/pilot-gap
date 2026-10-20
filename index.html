@@ -72,6 +72,18 @@ button:focus-visible,.role:focus-visible,input:focus-visible{outline:3px solid v
 .gap .num small{font-size:.42em;font-weight:500;margin-left:4px}
 .gap .sub{font-size:15px;font-weight:600;min-height:1.4em}
 .gap.small .num{font-size:40px}
+/* lost contact (Ryan, 20 Oct): estimate big on the left, last seen time and distance on the right */
+.gaprow{display:flex;align-items:center;gap:14px}
+.gaprow .num{min-width:0;white-space:nowrap}
+.gap.stale .num{font-size:56px}
+.gap.small.stale .num{font-size:34px}
+.gap .num .est{display:block;font:600 13px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.gap .side{border-left:2px solid var(--line);padding-left:12px;display:flex;flex-direction:column;gap:4px;font-weight:600;color:var(--fg);opacity:.75}
+.gap .side .tag{font:600 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.gap .side b{font:700 22px/1.1 var(--display);font-variant-numeric:tabular-nums;white-space:nowrap}
+.gap.small .side b{font-size:17px}
+.logbox.appupd{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
+.logbox.appupd .note{color:inherit}
 .gap.ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .gap.bad{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
 .gap.stale{border-color:var(--line);background:var(--stale-bg);color:var(--stale)}
@@ -120,8 +132,8 @@ code{font-size:14px;word-break:break-all}
       <span class="note">Allow "install unknown apps" for your browser when asked.</span>
     </div>
 
-    <div class="logbox ended" id="appUpdBox" hidden>
-      <strong>New app version</strong>
+    <div class="logbox appupd" id="appUpdBox" hidden>
+      <strong>Update the app</strong>
       <span class="note" id="appUpdInfo"></span>
       <a class="applink" id="appUpdLink" href="#">Download app update</a>
       <span class="note">The phone's browser downloads it. Open the file and tap Install (it updates over the old one; trips and settings are kept). Do this when stopped.</span>
@@ -259,7 +271,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.6.0 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.7.0 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -269,7 +281,7 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
-var APP_LATEST = "1.1.0";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_LATEST = "1.2.0";           // bump with every new app/PilotGap.apk (README: Publish)
 var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
@@ -307,7 +319,7 @@ function loadLogEarly(){ try{ var l=JSON.parse(localStorage.getItem("pg_lastlog"
 var myId = Math.random().toString(36).slice(2,10);
 var phoneId = (function(){ var v=null; try{ v=localStorage.getItem("pg_phoneId"); if(!v){ v=Math.random().toString(36).slice(2,8); localStorage.setItem("pg_phoneId",v); } }catch(e){} return v||myId.slice(0,6); })();
 var S = {
-  rtt:[],
+  rtt:[], ended:{}, odo:0, lastEst:{},
   role: store.get("role",""), trip:"",
   myCfg: loadMyCfg(),               // what this phone sets when it is Truck 1
   cfg: clone(DEFAULT_CFG), cfgFrom:"default", cfgT:0,
@@ -437,11 +449,20 @@ function refreshUpLine(){
   f.textContent = !UPLOAD_URL ? "Automatic log upload is not set up yet." : practice ? "Practice trips are not sent." :
     pend ? "Waiting to send to the office." : ok ? "Sent to the office at "+hhmm(ok)+"." : "";
 }
+/* App 1.2.0+: the app sends the log (Ryan 2a, 20 Oct: 3 of 5 page uploads failed behind other apps). */
+var httpSeq=0, httpWait={};
+window.__pgHttp=function(id,status,text){ var w=httpWait[id]; if(!w) return; delete httpWait[id];
+  if(status>=200 && status<300){ try{ w.ok(JSON.parse(text)); }catch(e){ w.fail(new Error("bad reply")); } } else w.fail(new Error(status>0?"HTTP "+status:(text||"network"))); };
 function postLog(name,text,kind){
+  var body=JSON.stringify({key:UPLOAD_KEY,name:name,text:text});
+  if(NATIVE && typeof NATIVE.httpPost==="function" && /^https:/.test(UPLOAD_URL)){
+    return new Promise(function(ok,fail){ var id=++httpSeq; httpWait[id]={ok:ok,fail:fail};
+      try{ NATIVE.httpPost(id,UPLOAD_URL,body); }catch(e){ delete httpWait[id]; fail(e); } });   // the app times out after 30 s and always answers
+  }
   var ac = window.AbortController ? new AbortController() : null;
   S.aborts=S.aborts||{}; var slot={ac:ac,t:Date.now()}; S.aborts[kind]=slot;   // checked from periodic(), since page timers freeze in the app's background
   var tm = ac ? setTimeout(function(){ try{ ac.abort(); }catch(e){} },UPLOAD_TIMEOUT_MS) : 0;
-  return fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({key:UPLOAD_KEY,name:name,text:text}),signal:ac?ac.signal:undefined})
+  return fetch(UPLOAD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:body,signal:ac?ac.signal:undefined})
     .then(function(r){ return r.json(); })
     .then(function(j){ clearTimeout(tm); if(S.aborts[kind]===slot) delete S.aborts[kind]; return j; }, function(e){ clearTimeout(tm); if(S.aborts[kind]===slot) delete S.aborts[kind]; throw e; });
 }
@@ -515,15 +536,17 @@ function checkUpdate(){
   }catch(e){}
 }
 /* App update (Ryan 19 Oct 22:16): the app only shows the website page, so a new app file must be installed by hand. Tell app users when one is out. */
+function appOutdated(){ return !!NATIVE && verNum(APP_LATEST)>verNum(appVer()); }
 function appVer(){ try{ return NATIVE ? String(NATIVE.appVersion()) : ""; }catch(e){ return "?"; } }
 function showAppUpdate(){
   var mine=appVer(), on = !!NATIVE && verNum(APP_LATEST)>verNum(mine);
   $("appUpdBox").hidden=!on; $("appUpdLink").href=APP_DL;
-  if(on){ $("appUpdInfo").textContent="App "+APP_LATEST+" is out. This phone has app "+mine+". The page updates by itself; the app does not."; if(S.appUpdLogged!==APP_LATEST){ S.appUpdLogged=APP_LATEST; L("update","app "+APP_LATEST+" available, this phone has "+mine); } }
+  if(on) showUpdate();
+  if(on){ $("appUpdInfo").textContent="App "+APP_LATEST+" is out. This phone has app "+mine+". The new app also brings the newest page."; if(S.appUpdLogged!==APP_LATEST){ S.appUpdLogged=APP_LATEST; L("update","app "+APP_LATEST+" available, this phone has "+mine); } }
   Array.prototype.forEach.call(document.querySelectorAll(".ver"),function(e){ e.textContent=VERSION+(NATIVE?" · App "+mine:""); });
 }
 function showUpdate(){
-  var on=!!S.newVersion; $("updateBox").hidden=!on;
+  var on=!!S.newVersion && !appOutdated(); $("updateBox").hidden=!on;   // A2 (Ryan, 20 Oct): when the app is old, only "Update the app" shows
   if(on) $("updateInfo").textContent="Version "+S.newVersion.split(" ")[0]+" is on the website. This phone has "+VERSION.split(" ")[0]+". Phones on different versions may not see each other.";
 }
 function doUpdate(){
@@ -538,7 +561,7 @@ function doUpdate(){
 }
 
 /* ---------- trip shape ---------- */
-function twoTrucks(){ var t2=S.peers.truck2; return S.cfg.trucks===2 || S.role==="truck2" || !!(t2 && Date.now()-t2.t<STORED_MAX_MS); }
+function twoTrucks(){ return S.cfg.trucks===2 || S.role==="truck2" || !!S.peers.truck2; }
 function nm(r){ return (r==="truck" && !twoTrucks()) ? "Truck" : NAME[r]; }
 function chain(){ return twoTrucks() ? ["lead","truck","truck2","rear"] : ["lead","truck","rear"]; }
 function gapList(){
@@ -587,14 +610,14 @@ function gapInfo(aRole, bRole, range, now){
   // Both positions are moved forward along their heading by speed x age before measuring
   // (trial 19 Oct: positions up to 15-30 s old gave errors of about 300-365 m at highway speed).
   var age = Math.max(staleA?ageA:0, staleB?ageB:0);
-  var canEst = !(staleA||staleB) || age<=ESTIMATE_MS;
-  var est = canEst ? dist(project(a,ageA), project(b,ageB)) : null;
+  var est = dist(project(a,ageA), project(b,ageB));   // for any length of lost contact (Ryan, 20 Oct)
   if(!staleA&&!staleB){
     var st = est<range.min ? "close" : est>range.max ? "far" : "ok";
     return {state:st, value:est, raw:raw};
   }
   var who = staleA&&staleB ? (ageA>ageB?aRole:bRole) : (staleA?aRole:bRole);
-  return {state:"stale", value: est!=null ? est : raw, est:est, raw:raw, who:who, age:age};
+  var wp=S.peers[who], since = (wp && wp.odo!=null && S.odo!=null) ? Math.max(0,S.odo-wp.odo) : null;   // how far this vehicle has driven since that one was last heard
+  return {state:"stale", value:est, est:est, raw:raw, who:who, age:age, since:since};
 }
 // Where a vehicle should be now: its last position moved along its heading by speed x age.
 function project(p, ageMs){
@@ -619,6 +642,7 @@ function connectAppRelay(){
   S.client=c; S.relayEvtT=Date.now();
   L("relay","connecting through the app");
   try{ c.id=NATIVE.relayStart(TOPIC_BASE+S.topicId+"/+","pg_"+myId); }catch(e){ L("relay","app relay could not start: "+e.message); }
+  try{ if(typeof NATIVE.relayOwnTopic==="function") NATIVE.relayOwnTopic(topic(S.role)); }catch(e){}   // app 1.2.0: cleared by the app if the app is closed
 }
 window.__pgRelay=function(ev,a,b,c){
   var cl=S.client; if(!cl || !cl.app) return;
@@ -643,7 +667,7 @@ function connectRelay(){
 }
 function onRelayMessage(role, txt, stored){
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
-  if(!txt){ if(role!=="cfg" && role!==S.role){ delete S.peers[role]; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
+  if(!txt){ if(role!=="cfg" && role!==S.role && S.peers[role]){ delete S.peers[role]; S.ended[role]=Date.now(); S.wasStale[role]=false; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
   return unseal(txt).then(function(d){
     if(!d){ if(Date.now()-S.lastUnreadable>60000){ S.lastUnreadable=Date.now(); L("relay","unreadable message ignored ("+role+")"); } return; }
     handleMsg(role,d,!!stored);
@@ -681,7 +705,8 @@ function handleMsg(role, d, stored){
     if(d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
     return;
   }
-  S.peers[role]={lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
+  delete S.ended[role];
+  S.peers[role]={odo:S.odo,lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
     acc:typeof d.acc==="number"?d.acc:null,t:at,
     lag: stored ? null : now-(typeof d.s==="number"?d.s:d.t)};   // arrival minus sender's send time: delay plus the two phones' clock difference
 }
@@ -768,6 +793,7 @@ function onFix(p){
     if(fix.spd==null && dt>0.5 && !rough) fix.spd=d/dt;
     if(fix.hdg==null) fix.hdg = (d>5 && !rough) ? bearing(prev,fix) : prev.hdg;
   }
+  if(prev && fix.acc<=30 && prev.acc<=30 && !(fix.spd!=null && fix.spd<1)) S.odo=(S.odo||0)+dist(prev,fix);   // distance driven, for "last seen … m ago"
   if(!prev) L("gps","first fix, accuracy "+Math.round(fix.acc)+" m");
   S.lastFix=fix; S.gpsError="";
   S.peers[S.role]={lat:fix.lat,lon:fix.lon,spd:fix.spd,hdg:fix.hdg,acc:fix.acc,t:now};
@@ -851,7 +877,6 @@ function alarms(results,now){
     if(r===S.role) return;
     var p=S.peers[r]; var stale = p && now-p.t>STALE_MS;
     if(p && !stale) S.everLive[r]=true;
-    if(p && now-p.t>STORED_MAX_MS){ delete S.peers[r]; L("peer",nm(r)+" not heard from for 10 min: removed from the screen"); S.wasStale[r]=false; return; }
     if(stale && !S.wasStale[r] && S.everLive[r]){ L("peer","lost contact with "+nm(r)); if(!muted){ beep(440,0.35,0); say("lost_"+r,"Lost contact with "+nm(r).toLowerCase(),0); } }   // once per dropout (Ryan, 19 Oct)
     if(!stale && S.wasStale[r] && p) L("peer",nm(r)+" back");
     S.wasStale[r]=!!stale;
@@ -905,7 +930,8 @@ function ensureLayout(){
     var mine = S.role===g.a || S.role===g.b;
     h+='<div class="gap none'+(mine?"":" small")+'" id="gap_'+g.key+'">'+
        '<div class="who"><span id="gap_'+g.key+'_who"></span><span id="gap_'+g.key+'_range"></span></div>'+
-       '<div class="num" id="gap_'+g.key+'_num">–</div><div class="sub" id="gap_'+g.key+'_sub"></div></div>';
+       '<div class="gaprow"><div class="num" id="gap_'+g.key+'_num">–</div><div class="side" id="gap_'+g.key+'_side" hidden></div></div>'+
+       '<div class="sub" id="gap_'+g.key+'_sub"></div></div>';
     if(i<gaps.length-1) h+='<div class="vehicle'+(gaps.length>2?" mini":"")+'">'+TRUCK_SVG+'<span>'+nm(g.b)+'</span></div>';
   });
   $("gaps").innerHTML=h;
@@ -920,15 +946,19 @@ function setGap(g,info){
   box.className="gap"+(mine?"":" small");
   $("gap_"+key+"_who").textContent=gapLabel(g);
   $("gap_"+key+"_range").textContent=fmtRange(r);
-  if(info.state==="none"){ box.classList.add("none"); num.innerHTML="–"; sub.textContent="Waiting for "+nm(info.missing).toLowerCase(); return; }
+  var side=$("gap_"+key+"_side"); side.hidden=true;
+  if(info.state==="none"){ box.classList.add("none"); num.innerHTML="–";
+    var en=S.ended[info.missing]; sub.textContent = en ? nm(info.missing)+" ended the trip at "+hhmm(en) : "Waiting for "+nm(info.missing).toLowerCase(); return; }
   num.innerHTML=fmtM(info.value);
   if(info.state==="ok"){ box.classList.add("ok"); sub.textContent="In range"; }
   else if(info.state==="far"){ box.classList.add("bad"); sub.textContent="Too far · over by "+fmtMplain(info.value-r.max); }
   else if(info.state==="close"){ box.classList.add("bad"); sub.textContent="Too close · under by "+fmtMplain(r.min-info.value); }
   else {
     box.classList.add("stale");
-    if(info.est!=null) num.innerHTML="<small>est.</small> "+fmtM(info.est);   // estimate is the big number (trial 19 Oct: est. was within ~20 m, raw was 300 m+ out)
-    sub.textContent=nm(info.who)+" last seen "+fmtAge(info.age)+" ago"+(info.est!=null?" · estimate":" · too long to estimate, last known "+fmtMplain(info.raw));
+    num.innerHTML='<span class="est">Estimated gap</span>'+fmtM(info.est);   // Ryan, 20 Oct: estimate big on the left
+    side.hidden=false;
+    side.innerHTML='<span class="tag">Last seen</span><b>'+fmtAge(info.age)+' ago</b><b>'+(info.since!=null?fmtMplain(info.since)+' ago':'–')+'</b>';
+    sub.textContent="Lost contact";
   }
 }
 function renderRangePanel(){
@@ -948,6 +978,10 @@ function render(){
   results.forEach(function(x){
     setGap(x.gap,x.info);
     var k=x.gap.key, st=x.info.state, prev=S.lastGapState[k];
+    if(st==="stale") S.lastEst[k]={est:x.info.est, age:x.info.age, since:x.info.since};
+    else if(prev==="stale" && x.info.value!=null && S.lastEst[k]){   // how good was the estimate? (Ryan, 20 Oct)
+      var le=S.lastEst[k]; L("estimate",GAPNAME[k]+" back after "+fmtAge(le.age)+": estimate "+Math.round(le.est)+" m, actual "+Math.round(x.info.value)+" m, out by "+Math.round(Math.abs(x.info.value-le.est))+" m"+(le.since!=null?" (this vehicle drove "+Math.round(le.since)+" m meanwhile)":"")); delete S.lastEst[k];
+    }
     if(st!==prev){
       S.lastGapState[k]=st;
       L("gap",GAPNAME[k]+": "+(prev||"start")+" -> "+st+(x.info.value!=null?" at "+Math.round(x.info.value)+" m":"")+(x.info.est!=null?" (est. "+Math.round(x.info.est)+" m)":"")+(st==="none"?" (waiting for "+nm(x.info.missing)+")":""));
@@ -994,7 +1028,8 @@ function render(){
   if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
   if(S.cryptoErr) b.push({text:S.cryptoErr});
   if(S.saverWarn && !S.practice) b.push({text:S.saverWarn});
-  if(S.newVersion) b.push({text:"New version "+S.newVersion.split(" ")[0]+" is on the website. Update when stopped: the page restarts and you tap Start again.",update:true});
+  if(appOutdated()) b.push({text:"Update the app to "+APP_LATEST+" (this phone has "+appVer()+"). When stopped: tap End trip, then Download app update on the start screen."});
+  else if(S.newVersion) b.push({text:"New version "+S.newVersion.split(" ")[0]+" is on the website. Update when stopped: the page restarts and you tap Start again.",update:true});
   if(!S.practice && S.role!=="truck" && S.cfgFrom==="default" && S.connected) b.push({text:"Using default gaps until Truck 1 connects."});
   if(now-S.dupRoleSeen<STALE_MS){ if(!S.dupLogged){ S.dupLogged=true; L("role","another phone is also "+nm(S.role)); } } else S.dupLogged=false;
   if(now-S.dupRoleSeen<STALE_MS) b.push({text:"Another phone is also set as "+nm(S.role)+". Check each phone's role.",change:true});
@@ -1115,7 +1150,7 @@ function start(){
   try{ if(!practice) history.replaceState(null,"",shareUrl()); }catch(e){}
   initAudio(); beep(880,0.08,0);
   S.keepOn=$("keepOn").checked; S.force=$("forceOn").checked;
-  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.alarmed={}; S.rtt=[]; S.lastTrk=0; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
+  S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.alarmed={}; S.rtt=[]; S.lastTrk=0; S.ended={}; S.odo=0; S.lastEst={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
   S.lastRepub=0; S.lastUpload=0; S.lastSend=0; S.oldIgnored={};
   // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
@@ -1229,7 +1264,8 @@ document.addEventListener("visibilitychange",function(){
   if(document.visibilityState==="visible"){ L("phone","back on this page | "+relayDiag(Date.now())); if(S.client && !S.connected && Date.now()-(S.relayEvtT||0)>5000) S.relayEvtT=0;   /* reconnect straight away */ S.lastRx=Math.max(S.lastRx||0,Date.now()-RELAY_SILENT_MS+15000); S.wakeTried=0; wakeLock(); videoCheck(); publishMine(true); }
   else { L("phone","going to background | "+relayDiag(Date.now())); L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
 });
-window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal(); } });
+window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal();
+  try{ if(S.client && !S.client.app && S.connected && !S.practice) S.client.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){} } });   // browser closed: tell the others (Ryan, 20 Oct)
 
 var q=new URLSearchParams(location.search);
 var DEFAULT_CODE = "234567";   // default for testing (Ryan, 19 Oct 03:11; was 123456); New code for privacy

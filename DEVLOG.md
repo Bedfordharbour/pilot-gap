@@ -2,6 +2,17 @@
 
 Decisions, the reasons for them, and faults found. Newest first. Dates are Perth time.
 
+## 2026-10-20
+
+### Lost-contact display, update banner, app uploads (decided 20 Oct afternoon)
+
+- Ryan: "Merge lost and remove gone." Estimate big on the left; right side "Last seen", minutes ago, metres ago. Ryan: the metres must be "an increasing distance", and the bottom line has no "estimated from speed and time" wording.
+- Meaning of "N m ago" (stated by Claude, not objected to): distance this vehicle has driven since the other was last heard. Counted from fixes with accuracy 30 m or better, ignoring movement under 1 m/s.
+- Ryan 2b: a lost vehicle stays shown until our trip ends, or the other vehicle presses End trip or exits the program. App 1.2.0 sends an empty "cleared" message when closed; browsers send it on page close (best effort).
+- Ryan 2a: the app sends the log uploads (the page's own upload failed behind other apps).
+- Ryan 2c, A2: during a trip, an out-of-date app gets one "Update the app" banner and no page-update box. Lawrie pressed the page update several times and never got the app.
+- Built as page 1.7.0 / app 1.2.0. Built in one release after the final OK, as Ryan asked.
+
 ## 2026-10-19
 
 ### Return trip, 20 Oct (06:22–06:39 Perth) and decisions (07:19)

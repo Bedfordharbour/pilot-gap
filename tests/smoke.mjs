@@ -146,9 +146,6 @@ await p.waitForTimeout(300);
 check('old stored position from an earlier trip ignored', await p.evaluate(() => !window.__pg.S.peers.truck2));
 check('old stored gap settings ignored', await p.evaluate(() => window.__pg.S.cfg.ranges.rear.min === 150));
 check('old stored messages logged', await p.evaluate(() => /ignored old stored Truck 2 position/.test(window.__pg.logText(window.__pg.S.log)) && /ignored old stored gap settings/.test(window.__pg.logText(window.__pg.S.log))));
-await p.evaluate(() => { window.__pg.S.peers.truck2 = {lat:-33.87, lon:121.89, spd:0, hdg:0, acc:5, t:Date.now()-20*60000}; window.__pg.S.cfg.trucks = 1; });
-check('a Truck 2 not heard from for 10 min does not force two-truck mode', await p.evaluate(() => !window.__pg.twoTrucks()));
-await p.evaluate(() => { delete window.__pg.S.peers.truck2; window.__pg.S.cfg.trucks = 2; });
 check('wrong-code, plain and bad messages ignored', (await p.textContent('#gap_rear_range')) === '150–900 m', await p.textContent('#gap_rear_range'));
 
 // Trip log (8a)
@@ -214,6 +211,7 @@ const a = await ctxApp.newPage(); a.on('pageerror', e => errors.push('app: ' + e
 await a.goto('http://localhost:8765/'); await a.waitForTimeout(300);
 check('app: download box hidden inside the app', !(await a.isVisible('#appBox')));
 check('app: older app is told a new app is out, with a tap-to-download link that opens outside the app', await a.isVisible('#appUpdBox') && /App \d+\.\d+\.\d+ is out\. This phone has app 1\.0\.0/.test(await a.textContent('#appUpdInfo')) && /^https:\/\/github\.com\/Bedfordharbour\/pilot-gap\/raw\/main\/app\/PilotGap\.apk$/.test(await a.getAttribute('#appUpdLink', 'href')), await a.textContent('#appUpdInfo'));
+check('app: old app gets "Update the app", not the page update box (A2)', !(await a.isVisible('#updateBox')) && /Update the app/.test(await a.textContent('#appUpdBox')));
 check('app: start screen shows the app version', /· App 1\.0\.0/.test(await a.textContent('.ver')), await a.textContent('.ver'));
 await a.evaluate(() => window.__pg.setUploadUrl('/upload'));
 await a.click('[data-role=truck]'); await a.click('#start'); await a.waitForTimeout(200);
@@ -290,10 +288,19 @@ check('new day: previous log file sent whole and a new file started', uploads.le
 // relay connected but silent for 45 s (seen in the trial): treated as dead and replaced
 await a.evaluate(() => { const S = window.__pg.S; S.client = { removeAllListeners(){}, on(){}, end(){} }; S.connected = true; S.lastRx = Date.now() - 60000; window.__pg.periodic(Date.now()); });
 check('app: silent relay connection is treated as dead and replaced', await a.evaluate(() => /connection treated as dead/.test(window.__pg.logText(window.__pg.S.log)) && /starting a new connection/.test(window.__pg.logText(window.__pg.S.log))));
-// a vehicle not heard from for 10 min is removed from the screen
-await a.evaluate(() => { window.__pg.S.peers.lead = { lat: -33.85, lon: 121.89, spd: 0, hdg: 0, acc: 5, t: Date.now() - 11 * 60000 }; window.__pgNativeTick(); });
-await a.evaluate(() => { window.__pgNativeTick && window.__pg.periodic(Date.now()); }); await a.waitForTimeout(1200);
-check('app: vehicle silent for 10 min removed', await a.evaluate(() => !window.__pg.S.peers.lead && /not heard from for 10 min/.test(window.__pg.logText(window.__pg.S.log))));
+// lost contact (Ryan, 20 Oct): one state for any length of time; estimate big, last seen time and distance on the right
+await a.evaluate(() => { const S = window.__pg.S; S.odo = 9000; S.peers.lead = { lat: -33.8615 + 1500/111320, lon: 121.8912, spd: 0, hdg: 0, acc: 5, t: Date.now() - 11 * 60000, odo: 4180 }; });
+await a.waitForTimeout(1300);
+const sideTxt = await a.textContent('#gap_front_side');
+check('lost 11 min: still shown with estimate, last seen time and distance driven since', /Estimated gap/.test(await a.textContent('#gap_front_num')) && /Last seen/.test(sideTxt) && /11 min ago/.test(sideTxt) && /4,820 m ago/.test(sideTxt) && (await a.textContent('#gap_front_sub')) === 'Lost contact', [sideTxt, await a.textContent('#gap_front_sub')]);
+await a.screenshot({ path: path.join(root, 'tests', 'phone-lost.png') });
+// back again: the log says how good the estimate was
+const back = await a.evaluate(() => window.__pg.seal({ id: 'L', lat: -33.8615 + 1520/111320, lon: 121.8912, spd: 0, hdg: 0, acc: 5, t: Date.now(), s: Date.now() }));
+await a.evaluate(t => window.__pg.onRelayMessage('lead', t, false), back); await a.waitForTimeout(1300);
+check('estimate checked against the real gap when contact returns', await a.evaluate(() => /estimate +Front gap back after 11 min: estimate \d+ m, actual \d+ m, out by \d+ m/.test(window.__pg.logText(window.__pg.S.log))), await a.evaluate(() => window.__pg.logText(window.__pg.S.log).split('\n').filter(l => /estimate /.test(l)).slice(-1)[0]));
+// the other vehicle ends its trip (empty stored message): shown as ended
+await a.evaluate(() => window.__pg.onRelayMessage('lead', '', true)); await a.waitForTimeout(1300);
+check('other vehicle ended its trip: shown as ended, not lost', /Lead pilot ended the trip at \d\d:\d\d/.test(await a.textContent('#gap_front_sub')), await a.textContent('#gap_front_sub'));
 await a.click('#stop'); await a.waitForTimeout(800);
 const calls3 = await a.evaluate(() => window.__calls.map(c => c[0]));
 check('app: End trip stops background tracking', calls3.includes('tripEnd'), calls3);
@@ -327,7 +334,8 @@ await ctxR.addInitScript(() => {
   window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'), beep: rec('beep'), beepTwice: rec('beepTwice'),
     keepScreenOn: rec('keepScreenOn'), netInfo: () => 'mobile internet ok', vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
     appVersion: () => '1.1.0', hasLocation: () => true,
-    relayStart: rec('relayStart', 7), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayStopId: rec('relayStopId'), relayUp: () => true, relayRunning: () => true };
+    relayStart: rec('relayStart', 7), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayStopId: rec('relayStopId'), relayUp: () => true, relayRunning: () => true,
+    relayOwnTopic: rec('relayOwnTopic'), httpPost: (id, url, body) => { window.__calls.push(['httpPost', url, JSON.parse(body).name]); setTimeout(() => window.__pgHttp(id, 200, '{"ok":true}'), 50); } };
   localStorage.setItem('pg_agree', JSON.stringify({ name: 'Relay Driver', t: Date.now(), v: 1 }));
 });
 const r = await ctxR.newPage(); r.on('pageerror', e => errors.push('app: ' + e.message));
@@ -335,6 +343,7 @@ await r.goto('http://localhost:8765/'); await r.waitForTimeout(300);
 await r.click('[data-role=truck]'); await r.click('#start');
 await r.waitForFunction(() => window.__calls.some(c => c[0] === 'relayStart'), null, { timeout: 15000 });
 const rs = await r.evaluate(() => window.__calls.find(c => c[0] === 'relayStart'));
+check('app relay: the app is told this vehicle\'s channel (cleared if the app is closed)', await r.evaluate(() => window.__calls.some(c => c[0] === 'relayOwnTopic' && /\/truck$/.test(c[1]))));
 check('app relay: started by the app on the trip channel', /^bhe-pilotgap\/v2\/[0-9a-f]{24}\/\+$/.test(rs[1]) && /^pg_/.test(rs[2]), rs);
 await r.evaluate(() => { window.__pgNativeFix(-33.8615, 121.8912, 5, 20, 0); window.__pgRelay('connect'); });
 await r.waitForTimeout(500);
@@ -346,7 +355,8 @@ await r.waitForTimeout(1300);
 check('app relay: message from the app reaches the gap', /\d/.test(await r.textContent('#gap_front_num')) && await r.evaluate(() => !!window.__pg.S.peers.lead), await r.textContent('#gap_front_num'));
 await r.evaluate(() => { window.__pgRelay('close', 'test'); window.__pg.S.lastRx = Date.now() - 120000; window.__pg.periodic(Date.now()); });
 check('app relay: on a drop the page waits for the app to reconnect (no page reconnects)', await r.evaluate(() => window.__pg.S.client && window.__pg.S.client.app && window.__calls.filter(c => c[0] === 'relayStart').length === 1 && /connection closed \(app\)/.test(window.__pg.logText(window.__pg.S.log))));
-await r.evaluate(() => window.__pgRelay('connect')); await r.click('#stop'); await r.waitForTimeout(600);
+await r.evaluate(() => { window.__pg.setUploadUrl('https://example.test/exec'); window.__pgRelay('connect'); }); await r.click('#stop'); await r.waitForTimeout(600);
+check('log upload sent by the app (2a) and the reply handled', await r.evaluate(() => window.__calls.some(c => c[0] === 'httpPost' && c[1] === 'https://example.test/exec' && /-truck-RelayDriver-/.test(c[2])) && /log sent \(end of trip\)/.test(window.__pg.logText(JSON.parse(localStorage.getItem('pg_lastlog')).length ? window.__pg.S.log : []))), await r.evaluate(() => window.__calls.filter(c => c[0] === 'httpPost')));
 check('app relay: End trip clears this vehicle and stops the app relay', await r.evaluate(() => window.__calls.some(c => c[0] === 'relayPublish' && c[1].endsWith('/truck') && c[2] === '') && window.__calls.some(c => c[0] === 'relayStopId' && c[1] === 7)));
 // 4c: a page opened on the start screen keeps the stored log; lines written there are added, not a replacement
 const nBefore = await r.evaluate(() => JSON.parse(localStorage.getItem('pg_lastlog')).length);
