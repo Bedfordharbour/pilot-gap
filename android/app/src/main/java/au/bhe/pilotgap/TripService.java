@@ -67,7 +67,6 @@ public class TripService extends Service implements LocationListener {
     }
     static final long DIAG_MS = 60000;
     BroadcastReceiver saverRx;
-    RelayProbe probe;
 
     /** Battery saver's effect on location (Android: getLocationPowerSaveMode), in words. */
     String locSaver() {
@@ -105,7 +104,7 @@ public class TripService extends Service implements LocationListener {
                 + "; battery exempt " + (pm.isIgnoringBatteryOptimizations(getPackageName()) ? "yes" : "NO")
                 + (Build.VERSION.SDK_INT >= 23 ? "; doze " + (pm.isDeviceIdleMode() ? "ON" : "off") : "")
  + "; location saver " + locSaver()
-                + "; probe " + (probe == null ? "-" : probe.summary())
+                + "; app relay " + (MainActivity.relay == null ? "not used" : MainActivity.relay.summary())
                 + "; satellites " + (satsUsed < 0 ? "?" : satsUsed + " used of " + satsSeen + " seen")
                 + "; signal " + signalInfo()
                 + "; net " + netInfo(TripService.this));
@@ -175,8 +174,7 @@ public class TripService extends Service implements LocationListener {
             saverRx = new BroadcastReceiver() { @Override public void onReceive(Context c, Intent i) { reportSaver(); } };
             registerReceiver(saverRx, new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED));
         } catch (Exception ignored) { }
-        probe = new RelayProbe(msg -> handler.post(() -> sendEvent("probe: " + msg)));
-        probe.start();
+
         try {
             gnssCb = new GnssStatus.Callback() {
                 @Override public void onSatelliteStatusChanged(GnssStatus st) {
@@ -229,7 +227,7 @@ public class TripService extends Service implements LocationListener {
         running = false;
         handler.removeCallbacks(tick);
         handler.removeCallbacks(diag);
-        if (probe != null) probe.stop();
+        MainActivity.stopRelay();   // trip over: close the relay connection too
         if (saverRx != null) try { unregisterReceiver(saverRx); } catch (Exception ignored) { }
         if (gnssCb != null && lm != null) try { lm.unregisterGnssStatusCallback(gnssCb); } catch (Exception ignored) { }
         if (netCb != null) try { ((ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(netCb); } catch (Exception ignored) { }

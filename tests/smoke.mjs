@@ -213,7 +213,7 @@ await ctxApp.addInitScript(() => {
 const a = await ctxApp.newPage(); a.on('pageerror', e => errors.push('app: ' + e.message));
 await a.goto('http://localhost:8765/'); await a.waitForTimeout(300);
 check('app: download box hidden inside the app', !(await a.isVisible('#appBox')));
-check('app: older app is told a new app is out, with a tap-to-download link that opens outside the app', await a.isVisible('#appUpdBox') && /App 1\.0\.\d+ is out\. This phone has app 1\.0\.0/.test(await a.textContent('#appUpdInfo')) && /^https:\/\/github\.com\/Bedfordharbour\/pilot-gap\/raw\/main\/app\/PilotGap\.apk$/.test(await a.getAttribute('#appUpdLink', 'href')), await a.textContent('#appUpdInfo'));
+check('app: older app is told a new app is out, with a tap-to-download link that opens outside the app', await a.isVisible('#appUpdBox') && /App \d+\.\d+\.\d+ is out\. This phone has app 1\.0\.0/.test(await a.textContent('#appUpdInfo')) && /^https:\/\/github\.com\/Bedfordharbour\/pilot-gap\/raw\/main\/app\/PilotGap\.apk$/.test(await a.getAttribute('#appUpdLink', 'href')), await a.textContent('#appUpdInfo'));
 check('app: start screen shows the app version', /· App 1\.0\.0/.test(await a.textContent('.ver')), await a.textContent('.ver'));
 await a.evaluate(() => window.__pg.setUploadUrl('/upload'));
 await a.click('[data-role=truck]'); await a.click('#start'); await a.waitForTimeout(200);
@@ -319,6 +319,42 @@ const dp = await ctxDroid.newPage(); await dp.goto('http://localhost:8765/'); aw
 check('Android browser: download box shown', await dp.isVisible('#appBox') && (await dp.getAttribute('#appLink', 'href')) === 'app/PilotGap.apk');
 await dp.screenshot({ path: path.join(root, 'tests', 'phone-android-browser.png') });
 await ctxDroid.close();
+// ---- App 1.1.0: the relay connection carried by the app (stand-in records calls) ----
+const ctxR = await b.newContext({ viewport: { width: 375, height: 812 } });
+await ctxR.addInitScript(() => {
+  window.__calls = [];
+  const rec = (n, ret) => (...a) => { window.__calls.push([n, ...a]); return ret; };
+  window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'), beep: rec('beep'), beepTwice: rec('beepTwice'),
+    keepScreenOn: rec('keepScreenOn'), netInfo: () => 'mobile internet ok', vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
+    appVersion: () => '1.1.0', hasLocation: () => true,
+    relayStart: rec('relayStart'), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayUp: () => true };
+  localStorage.setItem('pg_agree', JSON.stringify({ name: 'Relay Driver', t: Date.now(), v: 1 }));
+});
+const r = await ctxR.newPage(); r.on('pageerror', e => errors.push('app: ' + e.message));
+await r.goto('http://localhost:8765/'); await r.waitForTimeout(300);
+await r.click('[data-role=truck]'); await r.click('#start');
+await r.waitForFunction(() => window.__calls.some(c => c[0] === 'relayStart'), null, { timeout: 15000 });
+const rs = await r.evaluate(() => window.__calls.find(c => c[0] === 'relayStart'));
+check('app relay: started by the app on the trip channel', /^bhe-pilotgap\/v2\/[0-9a-f]{24}\/\+$/.test(rs[1]) && /^pg_/.test(rs[2]), rs);
+await r.evaluate(() => { window.__pgNativeFix(-33.8615, 121.8912, 5, 20, 0); window.__pgRelay('connect'); });
+await r.waitForTimeout(500);
+const pubs = await r.evaluate(() => window.__calls.filter(c => c[0] === 'relayPublish').map(c => [c[1].split('/').pop(), c[3]]));
+check('app relay: position and settings sent through the app, retained', pubs.some(p => p[0] === 'truck' && p[1] === true) && pubs.some(p => p[0] === 'cfg'), pubs);
+const sealedLead = await r.evaluate(() => window.__pg.seal({ id: 'L', lat: -33.8615 + 1200/111320, lon: 121.8912, spd: 20, hdg: 0, acc: 5, t: Date.now(), s: Date.now() }));
+await r.evaluate(t => window.__pgRelay('msg', window.__pg.S.client && ('bhe-pilotgap/v2/' + window.__pg.S.topicId + '/lead'), t, false), sealedLead);
+await r.waitForTimeout(1300);
+check('app relay: message from the app reaches the gap', /\d/.test(await r.textContent('#gap_front_num')) && await r.evaluate(() => !!window.__pg.S.peers.lead), await r.textContent('#gap_front_num'));
+await r.evaluate(() => { window.__pgRelay('close', 'test'); window.__pg.S.lastRx = Date.now() - 120000; window.__pg.periodic(Date.now()); });
+check('app relay: on a drop the page waits for the app to reconnect (no page reconnects)', await r.evaluate(() => window.__pg.S.client && window.__pg.S.client.app && window.__calls.filter(c => c[0] === 'relayStart').length === 1 && /connection closed \(app\)/.test(window.__pg.logText(window.__pg.S.log))));
+await r.evaluate(() => window.__pgRelay('connect')); await r.click('#stop'); await r.waitForTimeout(600);
+check('app relay: End trip clears this vehicle and stops the app relay', await r.evaluate(() => window.__calls.some(c => c[0] === 'relayPublish' && c[1].endsWith('/truck') && c[2] === '') && window.__calls.some(c => c[0] === 'relayStop')));
+// 4c: a page opened on the start screen keeps the stored log; lines written there are added, not a replacement
+const nBefore = await r.evaluate(() => JSON.parse(localStorage.getItem('pg_lastlog')).length);
+await r.reload(); await r.waitForTimeout(500);
+await r.evaluate(() => { window.__pg.saveLogLocal(); });
+const nAfter = await r.evaluate(() => JSON.parse(localStorage.getItem('pg_lastlog')).length);
+check('start screen does not wipe the stored log (Lawrie, 20 Oct)', nAfter >= nBefore && nBefore > 10, [nBefore, nAfter]);
+await ctxR.close();
 check('no script errors (app)', errors.filter(e => e.startsWith('app:')).length === 0, errors);
 
 await b.close(); srv.close();

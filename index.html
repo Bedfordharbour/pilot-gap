@@ -259,7 +259,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.5.9 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.6.0 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -269,7 +269,7 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
-var APP_LATEST = "1.0.7";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_LATEST = "1.1.0";           // bump with every new app/PilotGap.apk (README: Publish)
 var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
@@ -303,6 +303,7 @@ function validRange(r){ return r && typeof r.min==="number" && typeof r.max==="n
 function validCfg(c){ return c && (c.trucks===1||c.trucks===2) && c.ranges && validRange(c.ranges.front) && validRange(c.ranges.mid) && validRange(c.ranges.rear); }
 function loadMyCfg(){ try{ var c=JSON.parse(store.get("cfg","null")); if(validCfg(c)) return {trucks:c.trucks,ranges:c.ranges}; }catch(e){} return clone(DEFAULT_CFG); }
 
+function loadLogEarly(){ try{ var l=JSON.parse(localStorage.getItem("pg_lastlog")||"[]"); return Array.isArray(l)?l:[]; }catch(e){ return []; } }   // 20 Oct: an empty in-memory log saved from the start screen wiped the stored one
 var myId = Math.random().toString(36).slice(2,10);
 var phoneId = (function(){ var v=null; try{ v=localStorage.getItem("pg_phoneId"); if(!v){ v=Math.random().toString(36).slice(2,8); localStorage.setItem("pg_phoneId",v); } }catch(e){} return v||myId.slice(0,6); })();
 var S = {
@@ -316,7 +317,7 @@ var S = {
   wake:null, keepOn: store.get("keepOn","0")==="1", force: store.get("forceOn","0")==="1",
   orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
   simT0:0, timers:[], layoutKey:"",
-  key:null, topicId:"", log:[], lastGapState:{}, lastSample:0, gpsQuiet:false, lastUnreadable:0
+  key:null, topicId:"", log:loadLogEarly(), lastGapState:{}, lastSample:0, gpsQuiet:false, lastUnreadable:0
 };
 if(ROLES.indexOf(S.role)<0) S.role="";
 
@@ -606,7 +607,27 @@ function project(p, ageMs){
 
 /* ---------- relay ---------- */
 function topic(role){ return TOPIC_BASE+S.topicId+"/"+role; }
+function appRelay(){ return !!(NATIVE && typeof NATIVE.relayStart==="function"); }
+/* App 1.1.0+: the app carries the relay connection (Ryan 4a, 20 Oct). Field test 20 Oct 08:26-08:36: the app's
+   own connection stayed up behind other apps while the page's died after ~100 s, every time. The page still
+   scrambles and unscrambles every message; the app only carries the text. */
+function connectAppRelay(){
+  var c={ app:true, reconnecting:true,
+    publish:function(t,p,o){ try{ if(!NATIVE.relayPublish(t,String(p),!!(o&&o.retain))) S.connected=false; }catch(e){} },
+    end:function(){ try{ NATIVE.relayStop(); }catch(e){} }, removeAllListeners:function(){}, on:function(){}, subscribe:function(){} };
+  S.client=c; S.relayEvtT=Date.now();
+  L("relay","connecting through the app");
+  try{ NATIVE.relayStart(TOPIC_BASE+S.topicId+"/+","pg_"+myId); }catch(e){ L("relay","app relay could not start: "+e.message); }
+}
+window.__pgRelay=function(ev,a,b,c){
+  var cl=S.client; if(!cl || !cl.app) return;
+  var now=Date.now();
+  if(ev==="connect"){ S.connected=true; cl.reconnecting=false; S.lastRx=now; S.relayEvtT=now; L("relay","connected (app)"); publishCfg(); publishMine(true); }
+  else if(ev==="close"){ if(S.connected) L("relay","connection closed (app): "+(a||"")+" | "+relayDiag(now)); S.connected=false; cl.reconnecting=true; S.relayEvtT=now; }
+  else if(ev==="msg"){ S.lastRx=now; S.rxCount=(S.rxCount||0)+1; onRelayMessage(String(a).split("/").pop(), b||"", !!c); }
+};
 function connectRelay(){
+  if(appRelay()) return connectAppRelay();
   if(typeof mqtt==="undefined"){ S.netErr="Relay library did not load"; return; }
   var c = mqtt.connect(RELAY,{clientId:"pg_"+myId, keepalive:30, reconnectPeriod:3000, connectTimeout:10000, clean:true});
   S.client=c;
@@ -697,7 +718,7 @@ function trackLine(now,results){
   L("trk","±"+Math.round(f.acc||0)+"m "+kmh(f.spd).replace(" ","")+" h"+(f.hdg!=null?Math.round(f.hdg):"-")+" fix "+((now-f.time)/1000).toFixed(1)+"s "+(f.net?"net":"gps")+" | "+gaps);
 }
 function relayDiag(now){
-  var c=S.client, st = !c ? "no client" : S.connected ? "on" : c.reconnecting ? "reconnecting" : c.disconnecting ? "closing" : "off";
+  var c=S.client, st = (!c ? "no client" : S.connected ? "on" : c.reconnecting ? "reconnecting" : c.disconnecting ? "closing" : "off")+(c&&c.app?" (app)":"");
   var cn=navigator.connection, net = (navigator.onLine===false?"offline":"online")+(cn&&cn.effectiveType?" "+cn.effectiveType:"")+(cn&&cn.type?" "+cn.type:"");
   var app=""; if(NATIVE && typeof NATIVE.netInfo==="function"){ try{ app=" | app net "+NATIVE.netInfo(); }catch(e){} }
   return "relay "+st+", rx "+(S.lastRx?Math.round((now-S.lastRx)/1000)+"s":"-")+", tx "+(S.lastSend?Math.round((now-S.lastSend)/1000)+"s":"-")+
@@ -713,6 +734,8 @@ function periodic(now){
     if(S.client && S.connected && now-(S.lastSend||0)>20000){ try{ S.client.publish(TOPIC_BASE+S.topicId+"/hb","",{qos:0}); S.lastSend=now; }catch(e){} }  // keeps the relay connection alive with no GPS
   }
   if(S.connected && now-(S.lastUpload||S.tripStart)>=UPLOAD_EVERY_MS){ S.lastUpload=now; uploadLog("timer"); }
+  Object.keys(S.aborts||{}).forEach(function(k){ var a=S.aborts[k]; if(a && a.ac && now-a.t>UPLOAD_TIMEOUT_MS){ try{ a.ac.abort(); }catch(e){} delete S.aborts[k]; } });   // page timers may be frozen: abort a hung upload here too
+  if(S.client && S.client.app) return;   // the app keeps its own connection alive and reconnects by itself
   if(S.client && S.connected && now-(S.lastRx||now)>RELAY_SILENT_MS){   // trial 19 Oct: the connection died in the app's background and nothing noticed for 15 min
     L("relay","nothing received for 45 s (not even this phone's own messages): connection treated as dead");
     S.connected=false; S.relayEvtT=0;
@@ -723,7 +746,6 @@ function periodic(now){
     try{ old.removeAllListeners(); old.on("error",function(){}); old.end(true); }catch(e){}
     connectRelay();
   }
-  Object.keys(S.aborts||{}).forEach(function(k){ var a=S.aborts[k]; if(a && a.ac && now-a.t>UPLOAD_TIMEOUT_MS){ try{ a.ac.abort(); }catch(e){} delete S.aborts[k]; } });   // page timers may be frozen: abort a hung upload here too
 }
 function cfgText(c){ return "front "+fmtRange(c.ranges.front)+(c.trucks===2?", between trucks "+fmtRange(c.ranges.mid):"")+", rear "+fmtRange(c.ranges.rear)+", "+c.trucks+" truck"+(c.trucks===2?"s":""); }
 
@@ -1220,7 +1242,7 @@ $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 setInterval(function(){ if($("run").hidden){ if(store.get("uppending","")==="1") uploadLog("retry"); else sendUnsent(); } },120000);   // on the start screen, keep trying to send waiting logs
 
-window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,rollLog:rollLog,logName:logName,twoTrucks:twoTrucks};
+window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,saveLogLocal:saveLogLocal,rollLog:rollLog,logName:logName,twoTrucks:twoTrucks};
 })();
 </script>
 </body>

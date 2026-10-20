@@ -44,6 +44,16 @@ public class MainActivity extends Activity {
     static final String PAGE = "https://bedfordharbour.github.io/pilot-gap/";
     static final String HOST = "bedfordharbour.github.io";
     static volatile WeakReference<MainActivity> current = new WeakReference<>(null);
+    static volatile NativeRelay relay;   // app 1.1.0: the relay connection lives here, not in the page
+    static final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    static void stopRelay() { NativeRelay r = relay; relay = null; if (r != null) new Thread(r::stop).start(); }
+
+    /** Pass a relay event to the page (main thread). Payloads are base64 text, topics are [a-z0-9/-]. */
+    static void toPage(String js) {
+        main.post(() -> { MainActivity a = current.get(); if (a != null && a.web != null) a.web.evaluateJavascript(js, null); });
+    }
+    static String q(String v) { return "'" + v.replace("\\", "").replace("'", "").replace("\n", " ") + "'"; }
 
     WebView web;
     TextToSpeech tts;
@@ -261,6 +271,26 @@ public class MainActivity extends Activity {
                 else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             });
         }
+
+        /** Relay connection run by the app (1.1.0). The page scrambles and unscrambles; this only carries text. */
+        @JavascriptInterface public void relayStart(String filter, String clientId) {
+            stopRelay();
+            final NativeRelay[] me = new NativeRelay[1];
+            me[0] = new NativeRelay(new NativeRelay.Listener() {
+                @Override public void onConnected() { if (relay == me[0]) toPage("window.__pgRelay&&window.__pgRelay('connect')"); }
+                @Override public void onClosed(String why) { if (relay == me[0]) toPage("window.__pgRelay&&window.__pgRelay('close'," + q(why) + ")"); }
+                @Override public void onMessage(String topic, String payload, boolean retained) {
+                    if (relay == me[0]) toPage("window.__pgRelay&&window.__pgRelay('msg'," + q(topic) + "," + q(payload) + "," + retained + ")");
+                }
+            }, filter, clientId);
+            relay = me[0];
+            me[0].start();
+        }
+        @JavascriptInterface public boolean relayPublish(String topic, String payload, boolean retain) {
+            NativeRelay r = relay; return r != null && r.publish(topic, payload, retain);
+        }
+        @JavascriptInterface public void relayStop() { stopRelay(); }
+        @JavascriptInterface public boolean relayUp() { NativeRelay r = relay; return r != null && r.up; }
 
         /** Phone network as Android sees it, for the trip log. */
         @JavascriptInterface public String netInfo() { return TripService.netInfo(MainActivity.this); }
