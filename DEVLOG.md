@@ -4,6 +4,25 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 
 ## 2026-10-20
 
+### Audit (20 Oct 19:30)
+
+- Ryan asked for a full audit of the 18-20 Oct decisions and faults. Full chat read turn by turn. Result kept outside the repo (Dropbox Claude/raw/notes/2026-10-20-pilot-gap-audit.md).
+- Releases against the 19 Oct 06:04 rule: 1.5.7 (19 Oct) and 1.5.9 / app 1.0.7 (20 Oct) were released with no final OK; 1.7.0 / app 1.2.0 with a partial OK (the meaning of "m ago" was never answered). Claude's fault.
+- The 06:04 rule was 19 Oct, not 20 Oct as the Claude Doc said.
+
+### Evening logs (16:10–18:52 Perth): findings, nothing built
+
+Sources: Drive logs pilotgap-20261020-1255-lead-Ryan-fopb4c, -1655-truck-Ryan-fopb4c, -1046-lead-Lawrie-wwigux, -1341-truck-Lawrie-74nb1o.
+- **Fault: app relay stuck for 43 min (Ryan's phone, app 1.1.0).** 16:12:00 connection aborted when the phone's network showed as "other" (not Wi-Fi or mobile). Every retry then failed: "Unable to resolve host broker.hivemq.com". From 16:25 the network was "mobile internet ok" but the lookups kept failing until the app restarted at 16:55. Four shorter drops the same day (13:39, 14:15, 14:18, 15:03) recovered in 1–2 min. Cause not proven. Options put to Ryan (1a–1d); not decided.
+- **Fault: estimate shown for 22 min.** Lawrie's phone (page 1.7.0, browser) lost Truck 1 (74nb1o) at 16:33:53 and showed a growing estimate (106 m to 1,942 m) until 16:55. Options put to Ryan (2a–2c); not decided.
+- **Fault (Claude's code): the estimate check compares different phones.** At 16:55 "out by 1910 m" compared lost phone 74nb1o with Ryan's phone, which had just switched from Lead to Truck 1. Fix proposed: compare only when the same phone returns (3a).
+- **Fault (Claude's code): "m ago" resets when the relay reconnects.** A replayed stored message re-creates the vehicle and resets the distance driven (Lawrie 17:18:36 "drove 89 m" during 2 min at about 110 km/h). Breaks Ryan's rule that it only increases. Fix: keep the count unless the message is newer.
+- **Fault (Claude's code): false "another phone is also Truck 1" after an update** (Ryan 17:00:16): the phone saw its own message from before the restart (new page id). Fix proposed: keep the id across a restart (3b).
+- Fair estimate checks (same vehicles, 17:08–17:43): 69 s lost, out 13 m; 2 min, out 8 m and 74 m; 3 min while arriving in Esperance, out 601 m and 1,750 m.
+- Verified: app 1.2.0 auto-restart after the update (16:59:56 → 17:00:08); uploads sent by the app, including from the background (17:12 timer while hidden); "Truck 1 ended the trip" on Lawrie's phone within 1 s of End trip (17:00:55, 17:01:41).
+- Not verified: "ended the trip" when the app is closed; Lawrie's last line 17:44:17 (browser), then Ryan's phone showed him lost from 17:46 (browser page close is best effort).
+- Relay drops at 17:09:55 and 17:17:34 ("closed by relay"); both phones lost each other at 17:17:04 and Lawrie's browser had connect timeouts for 80 s at the same time, so a shared network or relay cause, not one phone.
+
 ### Lost-contact display, update banner, app uploads (decided 20 Oct afternoon)
 
 - Ryan: "Merge lost and remove gone." Estimate big on the left; right side "Last seen", minutes ago, metres ago. Ryan: the metres must be "an increasing distance", and the bottom line has no "estimated from speed and time" wording.
@@ -12,8 +31,6 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 - Ryan 2a: the app sends the log uploads (the page's own upload failed behind other apps).
 - Ryan 2c, A2: during a trip, an out-of-date app gets one "Update the app" banner and no page-update box. Lawrie pressed the page update several times and never got the app.
 - Built as page 1.7.0 / app 1.2.0. Built in one release after the final OK, as Ryan asked.
-
-## 2026-10-19
 
 ### Return trip, 20 Oct (06:22–06:39 Perth) and decisions (07:19)
 
@@ -40,6 +57,8 @@ Decisions, the reasons for them, and faults found. Newest first. Dates are Perth
 - 1.0.6 installed at 07:48 through the new update box.
 - **Its test connection was refused every time** because it went to the relay's IPv6 address. The page's own connection worked, so this was the probe's fault, not the relay's. Fixed in 1.0.7 (IPv4 first); part of the approved 4b test.
 - The page relay again died 105 s and 104 s after the app went to the background (07:49:36 → 07:51:21, 07:54:44 → 07:56:28).
+
+## 2026-10-19
 
 ### App update notice (22:16 Adelaide time)
 
