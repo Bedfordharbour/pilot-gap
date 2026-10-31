@@ -2,6 +2,13 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.8.2 — 31 Oct 2026 (page: radio messages only) and Android app 1.3.2
+
+Ryan, 20:42: "2b".
+- **App 1.3.2 finds the unit by a low-energy scan before pairing**, and pairs and connects with what the scan found. 1.3.1 paired using the address alone; Android showed a PIN box, Ryan entered the right PIN, and pairing still failed (trip log 31 Oct 20:28-20:33). Most likely Android chose classic Bluetooth pairing, which the units do not have (not proven).
+- **Android's own reason for a failed pairing is shown and logged** (e.g. "PIN not accepted", "pairing cancelled"). New states: "looking for the unit…", "unit not found nearby".
+- Not yet tested on a phone.
+
 ## 1.8.1 — 31 Oct 2026 (page: radio messages only) and Android app 1.3.1
 
 Ryan, 20:11: "fix it properly".

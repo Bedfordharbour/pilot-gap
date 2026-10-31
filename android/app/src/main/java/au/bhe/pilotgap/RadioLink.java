@@ -31,6 +31,9 @@ import java.util.UUID;
  * Pairing (1.3.1): the phone pairs with the unit FIRST (createBond, Android's PIN box), and only
  * then opens the link. 1.3.0 relied on Android pairing by itself when the unit refused an
  * unpaired link; on Ryan's Samsung (Android 16) that never happened: 19 refusals, 31 Oct 19:55-20:03.
+ * 1.3.2: pair and connect with the device object from a fresh low-energy scan. 1.3.1 paired with an
+ * object built from the address alone; Android then offered classic (not low-energy) pairing, showed a
+ * PIN box, and failed even with the right PIN (31 Oct 20:28-20:33). Android's failure reason is logged.
  */
 @SuppressLint("MissingPermission")   // callers check BLUETOOTH_CONNECT first (MainActivity.radioAllowed)
 class RadioLink {
@@ -59,6 +62,8 @@ class RadioLink {
     BluetoothGattCharacteristic toChar, fromChar;
     boolean busy, readPending, ready, bonding;
     long pairFailedAt;
+    BluetoothDevice scanned;   // from a low-energy scan: carries the right address type
+    android.bluetooth.le.ScanCallback scanCb;
     int retry;
     long myNum = -1;
     BroadcastReceiver bondRx;
@@ -82,7 +87,7 @@ class RadioLink {
                 if (st == BluetoothDevice.BOND_BONDED) h.post(() -> { bonding = false; close(); retry = 0; connect(); });   // paired: now open the link
                 if (st == BluetoothDevice.BOND_NONE && prev == BluetoothDevice.BOND_BONDING) h.post(() -> {   // PIN wrong, cancelled or timed out
                     bonding = false; pairFailedAt = System.currentTimeMillis(); close();
-                    out.state("pairfailed", unit);
+                    out.state("pairfailed:" + unbondReason(i.getIntExtra("android.bluetooth.device.extra.REASON", -1)), unit);
                     if (want) h.postDelayed(() -> { if (want && gatt == null && !bonding) connect(); }, 60000);   // ask again in a minute, not in a loop
                 });
             }
@@ -94,7 +99,10 @@ class RadioLink {
     void stop() {
         want = false;
         try { ctx.unregisterReceiver(bondRx); } catch (Exception ignored) { }
-        h.post(() -> { close(); out.state("off", unit); thread.quitSafely(); });
+        h.post(() -> {
+            try { BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE); if (bm != null && bm.getAdapter() != null && bm.getAdapter().getBluetoothLeScanner() != null) stopScan(bm.getAdapter().getBluetoothLeScanner()); } catch (Exception ignored) { }
+            close(); out.state("off", unit); thread.quitSafely();
+        });
     }
 
     /** Send a short text on the trip channel (the role announcement). False if not connected. */
@@ -117,19 +125,57 @@ class RadioLink {
         BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
         BluetoothAdapter ad = bm == null ? null : bm.getAdapter();
         if (ad == null || !ad.isEnabled()) { out.state("nobluetooth", unit); later(); return; }
+        if (scanned == null) { find(ad); return; }
         try {
-            BluetoothDevice dev = ad.getRemoteDevice(address);
+            BluetoothDevice dev = scanned;
             int bs = dev.getBondState();
             if (bs != BluetoothDevice.BOND_BONDED) {   // pair first; the bond receiver connects when it succeeds
                 if (bonding || bs == BluetoothDevice.BOND_BONDING) return;
                 bonding = true;
                 out.state("pairing", unit);
-                if (!dev.createBond()) { bonding = false; out.state("pairfailed", unit); h.postDelayed(() -> { if (want && gatt == null && !bonding) connect(); }, 60000); }
+                if (!dev.createBond()) { bonding = false; out.state("pairfailed:Android refused to start pairing", unit); h.postDelayed(() -> { if (want && gatt == null && !bonding) connect(); }, 60000); }
                 return;
             }
             out.state("connecting", unit);
             gatt = dev.connectGatt(ctx, false, cb, BluetoothDevice.TRANSPORT_LE);
         } catch (Exception e) { close(); later(); }
+    }
+
+    /** Find the unit by a short low-energy scan (Meshtastic service), keep its device object, then connect. */
+    void find(BluetoothAdapter ad) {
+        final android.bluetooth.le.BluetoothLeScanner sc = ad.getBluetoothLeScanner();
+        if (sc == null) { out.state("nobluetooth", unit); later(); return; }
+        if (scanCb != null) return;   // already looking
+        out.state("searching", unit);
+        scanCb = new android.bluetooth.le.ScanCallback() {
+            @Override public void onScanResult(int type, android.bluetooth.le.ScanResult r) {
+                if (!address.equalsIgnoreCase(r.getDevice().getAddress())) return;
+                final BluetoothDevice d = r.getDevice();
+                h.post(() -> { if (scanCb == null) return; stopScan(sc); scanned = d; retry = 0; connect(); });
+            }
+            @Override public void onScanFailed(int code) { h.post(() -> { stopScan(sc); out.state("notfound:scan failed " + code, unit); later(); }); }
+        };
+        try {
+            sc.startScan(java.util.Collections.singletonList(new android.bluetooth.le.ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(SVC)).build()),
+                new android.bluetooth.le.ScanSettings.Builder().setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCb);
+        } catch (Exception e) { scanCb = null; out.state("notfound:scan error", unit); later(); return; }
+        h.postDelayed(() -> { if (scanCb != null) { stopScan(sc); out.state("notfound", unit); later(); } }, 10000);
+    }
+    void stopScan(android.bluetooth.le.BluetoothLeScanner sc) { android.bluetooth.le.ScanCallback c = scanCb; scanCb = null; if (c != null) try { sc.stopScan(c); } catch (Exception ignored) { } }
+
+    static String unbondReason(int r) {
+        switch (r) {
+            case 1: return "PIN not accepted";
+            case 2: return "unit rejected pairing";
+            case 3: return "pairing cancelled";
+            case 4: return "unit not reachable";
+            case 5: return "phone was busy scanning";
+            case 6: return "PIN not entered in time";
+            case 7: return "too many attempts";
+            case 8: return "unit cancelled pairing";
+            case 9: return "pairing removed";
+            default: return "reason " + r;
+        }
     }
 
     void later() {
