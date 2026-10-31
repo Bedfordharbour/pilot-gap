@@ -2,6 +2,24 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.8.1 — 31 Oct 2026 (page: radio messages only) and Android app 1.3.1
+
+Ryan, 20:11: "fix it properly".
+- **App 1.3.1 pairs with the unit first.** It asks Android to pair (Android's PIN box) and opens the link only once pairing has succeeded. App 1.3.0 waited for Android to start pairing by itself when the unit refused an unpaired phone; on Ryan's Samsung S23 (Android 16) that never happened: 19 refused links in 8 minutes and nothing received (trip log 31 Oct 19:53).
+- A wrong or cancelled PIN shows "pairing failed" and asks again after a minute, not in a loop. A unit that no longer accepts an old pairing shows how to fix it.
+- Not yet tested on a phone.
+
+## 1.8.0 — 31 Oct 2026 (page) and Android app 1.3.0
+
+Ryan, 31 Oct: "1b" (radio used for the gaps, not only recorded), "yes 7a" (fix C1 and C2 in the same release), 19:45 "just release it" (no phone test first). *(This entry was left out of the 1.8.0 commit by mistake and added with 1.8.1.)*
+- **Radio units (app 1.3.0, Android only).** Settings > "Radio unit in this vehicle": the app scans for Meshtastic units and the driver picks the one in the vehicle. The app keeps a Bluetooth link to it while the trip runs and reconnects by itself.
+- **Who is who on the radio.** Each app says on the radio, every 60 s, which role its unit is with (trip shown as a tag, never the trip code). A unit with no phone beside it (or an iPhone) is given its vehicle by hand under "Radio units heard".
+- **Gaps from mobile or radio.** For each other vehicle the newer position is used; mobile is preferred unless the radio one is 3 s newer. The card shows "· radio" when the radio is used. With no mobile signal the banner says "Gaps come from the radio only". Speed and direction of a radio vehicle are worked out from its last two positions.
+- **Log.** Every radio position: unit, role, signal (SNR, RSSI), age, distance from this vehicle, and the unit's raw speed and track values (units not yet proven). Which source each gap used ("R" on the track line).
+- **C1 fixed (audit 20 Oct): one phone per role.** The first phone on a role keeps it; a second phone on the same role is ignored and every phone shows "Two phones are set as …" until the first has been silent for 30 s. Gap settings only from the Truck 1 phone in use. One stray Truck 2 message no longer makes a two-truck trip (3 needed). Messages carry a lasting phone id.
+- **C2 fixed (audit 20 Oct): this phone's own GPS lost.** The card says "This phone has lost GPS" instead of "Lost contact", spoken once each way. No gap alarm from the estimate (Ryan 4d).
+- Smoke test 135 checks (24 new); `tests/meshproto/check.sh` 5/5 against the official Meshtastic Python package. Not tested on a phone.
+
 ## 1.7.0 — 20 Oct 2026 (page) and Android app 1.2.0
 
 Ryan, 20 Oct: "Merge lost and remove gone", "2a yes. 2b yes or the other vehcle presses end trip or exits the program. 2c a2".

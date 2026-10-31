@@ -280,7 +280,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.8.0 (31 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.8.1 (31 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -290,7 +290,7 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
-var APP_LATEST = "1.3.0";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_LATEST = "1.3.1";           // bump with every new app/PilotGap.apk (README: Publish)
 var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
@@ -1185,7 +1185,7 @@ function onRadioPos(node, info, now){
 function renderRadioPanel(now){
   var show=radioAvail() && !S.practice; $("radioField").hidden=!show; if(!show) return;
   $("radioState").textContent = !S.radio.unit ? "No unit chosen. The radio keeps gaps going where there is no mobile signal." :
-    S.radio.unit+": "+({connected:"connected",connecting:"connecting…",pairing:"pairing: enter the unit's PIN when asked",off:"off",nopermission:"Bluetooth not allowed for Pilot Gap",nobluetooth:"Bluetooth is off"}[S.radio.state]||S.radio.state||"off");
+    S.radio.unit+": "+({connected:"connected",connecting:"connecting…",pairing:"pairing: enter the unit's PIN when Android asks",pairfailed:"pairing failed (wrong PIN or cancelled). Asks again in a minute.",repair:"the unit no longer accepts this phone's pairing: in Android Bluetooth settings, forget the unit; Pilot Gap then pairs again",off:"off",nopermission:"Bluetooth not allowed for Pilot Gap",nobluetooth:"Bluetooth is off"}[S.radio.state]||S.radio.state||"off");
   var nodes=Object.keys(S.radioNodes).filter(function(n){ return n!==S.radio.node; }).sort();
   var key=nodes.map(function(n){ var r=radioRoleOf(n,now); return n+":"+(r?r.role+r.from:""); }).join(",");
   var host=$("radioUnits");

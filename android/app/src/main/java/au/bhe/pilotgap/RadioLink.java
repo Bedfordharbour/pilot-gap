@@ -28,7 +28,9 @@ import java.util.UUID;
  * read FromRadio until empty, read again when FromNum notifies. Only what Pilot Gap needs is
  * decoded: this unit's own node number, positions and text messages heard from other units.
  * The unit decrypts the private channel itself; this code never sees the channel key.
- * Pairing: the unit asks for its fixed PIN the first time; Android shows its own PIN box.
+ * Pairing (1.3.1): the phone pairs with the unit FIRST (createBond, Android's PIN box), and only
+ * then opens the link. 1.3.0 relied on Android pairing by itself when the unit refused an
+ * unpaired link; on Ryan's Samsung (Android 16) that never happened: 19 refusals, 31 Oct 19:55-20:03.
  */
 @SuppressLint("MissingPermission")   // callers check BLUETOOTH_CONNECT first (MainActivity.radioAllowed)
 class RadioLink {
@@ -55,7 +57,8 @@ class RadioLink {
     volatile boolean want;
     BluetoothGatt gatt;
     BluetoothGattCharacteristic toChar, fromChar;
-    boolean busy, readPending, ready;
+    boolean busy, readPending, ready, bonding;
+    long pairFailedAt;
     int retry;
     long myNum = -1;
     BroadcastReceiver bondRx;
@@ -74,8 +77,14 @@ class RadioLink {
                 BluetoothDevice d = i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 if (d == null || !address.equalsIgnoreCase(d.getAddress())) return;
                 int st = i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1);
+                int prev = i.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1);
                 if (st == BluetoothDevice.BOND_BONDING) out.state("pairing", unit);
-                if (st == BluetoothDevice.BOND_BONDED) h.post(() -> { close(); retry = 0; connect(); });   // start clean on the paired link
+                if (st == BluetoothDevice.BOND_BONDED) h.post(() -> { bonding = false; close(); retry = 0; connect(); });   // paired: now open the link
+                if (st == BluetoothDevice.BOND_NONE && prev == BluetoothDevice.BOND_BONDING) h.post(() -> {   // PIN wrong, cancelled or timed out
+                    bonding = false; pairFailedAt = System.currentTimeMillis(); close();
+                    out.state("pairfailed", unit);
+                    if (want) h.postDelayed(() -> { if (want && gatt == null && !bonding) connect(); }, 60000);   // ask again in a minute, not in a loop
+                });
             }
         };
         ctx.registerReceiver(bondRx, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
@@ -108,9 +117,17 @@ class RadioLink {
         BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
         BluetoothAdapter ad = bm == null ? null : bm.getAdapter();
         if (ad == null || !ad.isEnabled()) { out.state("nobluetooth", unit); later(); return; }
-        out.state("connecting", unit);
         try {
             BluetoothDevice dev = ad.getRemoteDevice(address);
+            int bs = dev.getBondState();
+            if (bs != BluetoothDevice.BOND_BONDED) {   // pair first; the bond receiver connects when it succeeds
+                if (bonding || bs == BluetoothDevice.BOND_BONDING) return;
+                bonding = true;
+                out.state("pairing", unit);
+                if (!dev.createBond()) { bonding = false; out.state("pairfailed", unit); h.postDelayed(() -> { if (want && gatt == null && !bonding) connect(); }, 60000); }
+                return;
+            }
+            out.state("connecting", unit);
             gatt = dev.connectGatt(ctx, false, cb, BluetoothDevice.TRANSPORT_LE);
         } catch (Exception e) { close(); later(); }
     }
@@ -185,7 +202,7 @@ class RadioLink {
             h.post(() -> {
                 if (g != gatt) return;
                 busy = false;
-                if (authFail(status)) { out.state("pairing", unit); return; }   // Android asks for the PIN; bond receiver reconnects
+                if (authFail(status)) { staleBond(); return; }
                 startConfig();
             });
         }
@@ -193,7 +210,7 @@ class RadioLink {
             h.post(() -> {
                 if (g != gatt) return;
                 busy = false;
-                if (authFail(status)) { out.state("pairing", unit); return; }
+                if (authFail(status)) { staleBond(); return; }
                 readPending = true; next();
             });
         }
@@ -204,7 +221,7 @@ class RadioLink {
             h.post(() -> {
                 if (g != gatt) return;
                 busy = false;
-                if (authFail(status)) { out.state("pairing", unit); return; }
+                if (authFail(status)) { staleBond(); return; }
                 if (status != BluetoothGatt.GATT_SUCCESS) { lost("read failed " + status); return; }
                 if (!ready) { ready = true; retry = 0; out.state("connected", unit); }
                 if (v != null && v.length > 0) { rxPackets++; try { fromRadio(v); } catch (Exception ignored) { } readPending = true; }   // keep reading until empty
@@ -217,6 +234,13 @@ class RadioLink {
             h.post(() -> { if (g == gatt && NUM.equals(c.getUuid())) { readPending = true; next(); } });
         }
     };
+
+    /** Paired, but the unit still refuses: its pairing was reset (new PIN or firmware). Ask the driver to re-pair. */
+    void staleBond() {
+        close();
+        out.state("repair", unit);
+        if (want) h.postDelayed(() -> { if (want && gatt == null) connect(); }, 60000);
+    }
 
     void startConfig() {
         writes.addFirst(MeshProto.toRadioWantConfig(new Random().nextInt() & 0x7fffffff));
