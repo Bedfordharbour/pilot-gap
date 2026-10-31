@@ -47,6 +47,10 @@ public class MainActivity extends Activity {
     static volatile NativeRelay relay;   // app 1.1.0: the relay connection lives here, not in the page
     static final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
 
+    static volatile RadioLink radio;   // app 1.3.0: Bluetooth link to the Meshtastic unit in this vehicle
+    static final int REQ_RADIO = 7;
+    boolean pickAfterPermission;
+
     static int relaySeq;
     static void stopRelay() { NativeRelay r = relay; relay = null; if (r != null) new Thread(r::stop).start(); }
     /** App closed mid-trip (Ryan, 20 Oct): tell the other phones this vehicle has gone, then close the relay. */
@@ -205,6 +209,84 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---- radio (1.3.0) ----
+    boolean radioAllowed() {
+        if (Build.VERSION.SDK_INT >= 31) return checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            && checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED;
+        return hasLocation();
+    }
+    void askRadioPermission() {
+        if (Build.VERSION.SDK_INT >= 31) requestPermissions(new String[]{Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT}, REQ_RADIO);
+        else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQ_RADIO);
+    }
+    @Override public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req != REQ_RADIO) return;
+        if (!radioAllowed()) { radioState("nopermission", savedUnit()); return; }
+        if (pickAfterPermission) { pickAfterPermission = false; pickRadio(); }
+    }
+    String savedAddress() { return getSharedPreferences("pg", MODE_PRIVATE).getString("radioAddr", ""); }
+    String savedUnit() { return getSharedPreferences("pg", MODE_PRIVATE).getString("radioName", ""); }
+    static void radioState(String st, String unit) {
+        toPage("window.__pgRadio&&window.__pgRadio('state'," + q(st) + "," + q(unit) + ")");
+    }
+    void startRadio() {
+        stopRadio();
+        String addr = savedAddress(), unit = savedUnit();
+        if (addr.isEmpty()) { radioState("", ""); return; }
+        if (!radioAllowed()) { radioState("nopermission", unit); return; }
+        RadioLink[] me = new RadioLink[1];
+        me[0] = new RadioLink(this, addr, unit, new RadioLink.Listener() {
+            @Override public void state(String st, String u) { if (radio == me[0] || "off".equals(st)) radioState(st, u); }
+            @Override public void myNode(String n) { if (radio == me[0]) toPage("window.__pgRadio&&window.__pgRadio('mynode'," + q(n) + ")"); }
+            @Override public void position(String n, String json) { if (radio == me[0]) toPage("window.__pgRadio&&window.__pgRadio('pos'," + q(n) + "," + q(json) + ")"); }
+            @Override public void text(String n, String json) { if (radio == me[0]) toPage("window.__pgRadio&&window.__pgRadio('text'," + q(n) + "," + q(json) + ")"); }
+        });
+        radio = me[0];
+        me[0].start();
+    }
+    static void stopRadio() { RadioLink r = radio; radio = null; if (r != null) r.stop(); }
+
+    /** Scan 6 s for Meshtastic units and let the driver pick the one in this vehicle. */
+    @android.annotation.SuppressLint("MissingPermission")
+    void pickRadio() {
+        if (!radioAllowed()) { pickAfterPermission = true; askRadioPermission(); return; }
+        android.bluetooth.BluetoothManager bm = (android.bluetooth.BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+        android.bluetooth.BluetoothAdapter ad = bm == null ? null : bm.getAdapter();
+        if (ad == null || !ad.isEnabled() || ad.getBluetoothLeScanner() == null) { Toast.makeText(this, "Turn Bluetooth on, then try again.", Toast.LENGTH_LONG).show(); return; }
+        final java.util.LinkedHashMap<String, String> found = new java.util.LinkedHashMap<>();
+        final android.bluetooth.le.ScanCallback cb = new android.bluetooth.le.ScanCallback() {
+            @Override public void onScanResult(int type, android.bluetooth.le.ScanResult r) {
+                String n = r.getDevice().getName(); if (n == null && r.getScanRecord() != null) n = r.getScanRecord().getDeviceName();
+                found.put(r.getDevice().getAddress(), n == null ? r.getDevice().getAddress() : n);
+            }
+        };
+        java.util.List<android.bluetooth.le.ScanFilter> filters = java.util.Collections.singletonList(
+            new android.bluetooth.le.ScanFilter.Builder().setServiceUuid(new android.os.ParcelUuid(RadioLink.SVC)).build());
+        android.bluetooth.le.ScanSettings set = new android.bluetooth.le.ScanSettings.Builder().setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY).build();
+        final android.bluetooth.le.BluetoothLeScanner sc = ad.getBluetoothLeScanner();
+        try { sc.startScan(filters, set, cb); } catch (Exception e) { Toast.makeText(this, "Bluetooth scan failed: " + e.getMessage(), Toast.LENGTH_LONG).show(); return; }
+        Toast.makeText(this, "Looking for radio units…", Toast.LENGTH_SHORT).show();
+        main.postDelayed(() -> {
+            try { sc.stopScan(cb); } catch (Exception ignored) { }
+            if (isFinishing()) return;
+            final String[] addrs = found.keySet().toArray(new String[0]);
+            String[] names = new String[addrs.length + 1];
+            for (int i = 0; i < addrs.length; i++) names[i] = found.get(addrs[i]);
+            names[addrs.length] = "No radio unit";
+            new android.app.AlertDialog.Builder(this)
+                .setTitle(addrs.length == 0 ? "No radio units found nearby" : "Radio unit in this vehicle")
+                .setItems(names, (d, which) -> {
+                    SharedPreferences.Editor e = getSharedPreferences("pg", MODE_PRIVATE).edit();
+                    if (which < addrs.length) e.putString("radioAddr", addrs[which]).putString("radioName", names[which]);
+                    else e.remove("radioAddr").remove("radioName");
+                    e.apply();
+                    if (TripService.running) startRadio(); else radioState("", which < addrs.length ? names[which] : "");
+                })
+                .show();
+        }, 6000);
+    }
+
     // ---- called by TripService (main thread) ----
     void deliverFix(Location l) {
         String js = String.format(Locale.US,
@@ -245,7 +327,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (current.get() == this) current = new WeakReference<>(null);
         if (TripService.running && !restartingPage) TripService.appClosed(this);
-        if (!restartingPage) closeRelayClearing();
+        if (!restartingPage) { closeRelayClearing(); stopRadio(); }
         if (tts != null) tts.shutdown();
         if (tone != null) { ToneGenerator t = tone; tone = null; t.release(); }
         if (web != null) web.destroy();
@@ -388,6 +470,12 @@ public class MainActivity extends Activity {
                 }
             });
         }
+
+        /** Radio unit (1.3.0). Events go to window.__pgRadio(event, a, b). */
+        @JavascriptInterface public void radioStart() { runOnUiThread(MainActivity.this::startRadio); }
+        @JavascriptInterface public void radioStop() { stopRadio(); }
+        @JavascriptInterface public void radioPick() { runOnUiThread(MainActivity.this::pickRadio); }
+        @JavascriptInterface public boolean radioSend(String text) { RadioLink r = radio; return r != null && text != null && text.length() <= 200 && r.sendText(text); }
 
         @JavascriptInterface public void reload() {
             runOnUiThread(() -> { if (web == null) return; triedCache = false; web.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT); web.loadUrl(PAGE); });

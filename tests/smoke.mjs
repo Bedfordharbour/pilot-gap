@@ -367,6 +367,87 @@ check('start screen does not wipe the stored log (Lawrie, 20 Oct)', nAfter >= nB
 await ctxR.close();
 check('no script errors (app)', errors.filter(e => e.startsWith('app:')).length === 0, errors);
 
+// ---- 1.8.0: radio (Meshtastic units through the app), C1 one phone per role, C2 own GPS lost ----
+const ctxX = await b.newContext({ viewport: { width: 375, height: 812 } });
+await ctxX.addInitScript(() => {
+  window.__calls = [];
+  const rec = (n, ret) => (...a) => { window.__calls.push([n, ...a]); return ret; };
+  window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'), beep: rec('beep'), beepTwice: rec('beepTwice'),
+    keepScreenOn: rec('keepScreenOn'), netInfo: () => 'mobile internet ok', vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
+    appVersion: () => '1.3.0', hasLocation: () => true,
+    relayStart: rec('relayStart', 9), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayStopId: rec('relayStopId'), relayUp: () => true, relayRunning: () => true,
+    relayOwnTopic: rec('relayOwnTopic'), httpPost: rec('httpPost'),
+    radioStart: rec('radioStart'), radioStop: rec('radioStop'), radioPick: rec('radioPick'), radioSend: rec('radioSend', true) };
+  localStorage.setItem('pg_agree', JSON.stringify({ name: 'Radio Driver', t: Date.now(), v: 1 }));
+});
+const x = await ctxX.newPage(); x.on('pageerror', e => errors.push('radio: ' + e.message));
+await x.goto('http://localhost:8765/'); await x.waitForTimeout(300);
+await x.click('[data-role=truck]'); await x.click('#start');
+await x.waitForFunction(() => window.__pg.S.key !== null && window.__calls.some(c => c[0] === 'relayStart'), null, { timeout: 15000 });
+const LAT0 = -33.8615, LON0 = 121.8912;
+await x.evaluate(([la, lo]) => { window.__pgNativeFix(la, lo, 5, 20, 0); window.__pgRelay('connect'); window.__pgRadio('state', 'connected', 'Meshtastic_8cab'); window.__pgRadio('mynode', '!ea0f8cab'); }, [LAT0, LON0]);
+check('radio: started with the trip', await x.evaluate(() => window.__calls.some(c => c[0] === 'radioStart')));
+const pub1 = await x.evaluate(() => window.__calls.filter(c => c[0] === 'relayPublish' && c[1].endsWith('/truck') && c[2]).slice(-1)[0][2]);
+check('1.8.0 messages carry the lasting phone id', await x.evaluate(async t => { const d = await window.__pg.unseal(t); return d && d.pid === window.__pg.phoneId; }, pub1));
+await x.evaluate(() => window.__pg.periodic(Date.now()));
+const ann = await x.evaluate(() => window.__calls.filter(c => c[0] === 'radioSend').map(c => c[1]));
+check('radio: this unit announced as Truck 1 on the air (trip tag, not the code)', ann.length === 1 && new RegExp('^PG1 [0-9a-f]{8} truck [a-z0-9]+$').test(ann[0]) && !ann[0].includes('RADIO'), ann);
+// a unit with no phone, set by hand as Lead, 1200 m ahead
+const radPos = (node, dm, ageS, extra) => x.evaluate(([n, la, lo, a, e]) => window.__pgRadio('pos', n, JSON.stringify(Object.assign({ lat: la, lon: lo, t: Math.floor(Date.now() / 1000) - a, snr: 9.5, rssi: -80 }, e || {}))), [node, LAT0 + dm / 111320, LON0, ageS, extra]);
+await radPos('!e3caefdd', 1200, 1);
+check('radio: unassigned unit is logged but not used', await x.evaluate(() => !window.__pg.S.peers.lead && /heard unit !e3caefdd .*\(not assigned\)/.test(window.__pg.logText(window.__pg.S.log))));
+await x.click('#toggleSettings'); await x.waitForTimeout(1200);
+check('radio: settings list the unit heard with a vehicle choice', await x.isVisible('#radioField') && (await x.locator('#radioUnits select').count()) === 1);
+await x.selectOption('#radioUnits select', 'lead'); await x.waitForTimeout(200);
+await radPos('!e3caefdd', 1200, 1); await x.waitForTimeout(1200);
+check('radio: unit set by hand gives the front gap, tagged radio', /\d/.test(await x.textContent('#gap_front_num')) && /radio/.test(await x.textContent('#gap_front_sub')) && await x.evaluate(() => window.__pg.S.src.lead === 'radio'), await x.textContent('#gap_front_sub'));
+check('radio: gap from the radio is right (about 1200 m)', await x.evaluate(() => { const g = window.__pg.S.peers.lead; return Math.abs(window.__pg.dist(g, window.__pg.S.peers.truck) - 1200) < 15; }));
+check("radio: line in the log with signal and distance", await x.evaluate(() => /radio +Lead pilot unit !e3caefdd snr 9\.5 rssi -80 .*from me 1(19\d|20\d) m \(set by hand\)/.test(window.__pg.logText(window.__pg.S.log))), await x.evaluate(() => window.__pg.logText(window.__pg.S.log).split("\n").filter(l => /Lead pilot unit/.test(l)).slice(-2)));
+// mobile message for Lead: preferred when not older than the radio one
+const sLead = await x.evaluate(([la, lo]) => window.__pg.seal({ id: 'L1', pid: 'leadph', lat: la + 1250 / 111320, lon: lo, spd: 20, hdg: 0, acc: 5, t: Date.now(), s: Date.now() }), [LAT0, LON0]);
+await x.evaluate(t => window.__pg.onRelayMessage('lead', t, false), sLead);
+check('mobile position preferred when as new as the radio one', await x.evaluate(() => window.__pg.S.src.lead === 'mobile'));
+await x.evaluate(() => { const m = window.__pg.S.mob.lead; m.t -= 20000; window.__pg.refreshPeer('lead'); });
+await radPos('!e3caefdd', 1300, 0);
+check('radio position used when mobile is older', await x.evaluate(() => window.__pg.S.src.lead === 'radio' && /source +Lead pilot now from radio/.test(window.__pg.logText(window.__pg.S.log))));
+await radPos('!e3caefdd', 1300, 120);
+check('radio: position measured over 60 s ago not used', await x.evaluate(() => Date.now() - window.__pg.S.rad.lead.t < 30000));
+// role announced by the unit's phone, other trip ignored
+await x.evaluate(() => window.__pgRadio('text', '!aaaa0001', JSON.stringify({ text: 'PG1 ' + window.__pg.radioTag() + ' rear rph1' })));
+await radPos('!aaaa0001', -400, 1);
+check('radio: unit announced by its phone as Rear gives the rear gap', await x.evaluate(() => window.__pg.S.src.rear === 'radio'));
+await x.evaluate(() => window.__pgRadio('text', '!bbbb0002', JSON.stringify({ text: 'PG1 00000000 lead zz' })));
+await radPos('!bbbb0002', 50, 1);
+check('radio: unit on another trip is not used', await x.evaluate(() => /unit !bbbb0002 is on another trip/.test(window.__pg.logText(window.__pg.S.log)) && window.__pg.S.radOwner.lead.node === '!e3caefdd'));
+// C1: a second phone on the same role is ignored and everyone is told
+const sLead2 = await x.evaluate(([la, lo]) => window.__pg.seal({ id: 'L2', pid: 'otherph', lat: la + 9 / 111320, lon: lo, spd: 20, hdg: 0, acc: 5, t: Date.now(), s: Date.now() }), [LAT0, LON0]);
+await x.evaluate(t => window.__pg.onRelayMessage('lead', t, false), sLead);
+await x.evaluate(t => window.__pg.onRelayMessage('lead', t, false), sLead2); await x.waitForTimeout(1200);
+check('C1: second phone on the same role is ignored (no 9 m gap)', await x.evaluate(() => window.__pg.dist(window.__pg.S.mob.lead, window.__pg.S.peers.truck) > 1000));
+check('C1: every phone is told there are two phones on one role', /Two phones are set as Lead pilot/.test(await x.textContent('#banners')), await x.textContent('#banners'));
+await x.evaluate(() => { window.__pg.S.owner.lead.t = Date.now() - 40000; });
+await x.evaluate(t => window.__pg.onRelayMessage('lead', t, false), sLead2);
+check('C1: the second phone takes the role after the first has been silent 30 s', await x.evaluate(() => window.__pg.S.owner.lead.id === 'otherph'));
+// ghost Truck 2: one stray message does not make a two-truck trip; three do
+const sT2 = await x.evaluate(([la, lo]) => window.__pg.seal({ id: 'T2', pid: 't2ph', lat: la - 60 / 111320, lon: lo, spd: 20, hdg: 0, acc: 5, t: Date.now(), s: Date.now() }), [LAT0, LON0]);
+await x.evaluate(t => window.__pg.onRelayMessage('truck2', t, false), sT2);
+check('C1: one stray Truck 2 message does not add a second truck', await x.evaluate(() => !window.__pg.twoTrucks()));
+await x.evaluate(async t => { await window.__pg.onRelayMessage('truck2', t, false); await window.__pg.onRelayMessage('truck2', t, false); }, sT2);
+check('C1: a real Truck 2 (3 messages) does', await x.evaluate(() => window.__pg.twoTrucks()));
+// C2: this phone's GPS stops
+await x.evaluate(() => { window.__pg.S.lastFix.time -= 20000; window.__pg.S.peers.truck.t -= 20000; window.__calls.length = 0; });
+await x.waitForTimeout(1300);
+check('C2: own GPS lost is shown as this phone, not the other vehicle', /This phone has lost GPS/.test(await x.textContent('#gap_front_sub')) && !/Lost contact/.test(await x.textContent('#gap_front_sub')), await x.textContent('#gap_front_sub'));
+check('C2: spoken once', await x.evaluate(() => window.__calls.filter(c => c[0] === 'say' && /lost GPS/.test(c[1])).length === 1));
+check('C2: no gap alarm from the estimate', await x.evaluate(() => !window.__calls.some(c => c[0] === 'say' && /too (close|far)/.test(c[1]))));
+await x.click('#radioPick');
+check('radio: Choose radio unit asks the app', await x.evaluate(() => window.__calls.some(c => c[0] === 'radioPick')));
+await x.click('#stop'); await x.waitForTimeout(400);
+check('radio: stopped at End trip', await x.evaluate(() => window.__calls.some(c => c[0] === 'radioStop')));
+await x.screenshot({ path: path.join(root, 'tests', 'phone-radio.png') });
+await ctxX.close();
+check('no script errors (radio)', errors.filter(e => e.startsWith('radio:')).length === 0, errors);
+
 await b.close(); srv.close();
 console.log(fails.length ? `\n${fails.length} check(s) failed` : '\nAll checks passed');
 process.exit(fails.length ? 1 : 0);

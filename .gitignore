@@ -10,3 +10,8 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+tests/meshproto/out/
+tests/meshproto/cases.txt
+tests/meshproto/result.txt
+tests/meshproto/*.jar
+tests/phone-radio.png

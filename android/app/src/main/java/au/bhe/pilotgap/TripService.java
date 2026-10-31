@@ -105,6 +105,7 @@ public class TripService extends Service implements LocationListener {
                 + (Build.VERSION.SDK_INT >= 23 ? "; doze " + (pm.isDeviceIdleMode() ? "ON" : "off") : "")
  + "; location saver " + locSaver()
                 + "; app relay " + relaySummary()
+                + "; " + radioSummary()
                 + "; satellites " + (satsUsed < 0 ? "?" : satsUsed + " used of " + satsSeen + " seen")
                 + "; signal " + signalInfo()
                 + "; net " + netInfo(TripService.this));
@@ -113,6 +114,7 @@ public class TripService extends Service implements LocationListener {
         }
     };
 
+    static String radioSummary() { RadioLink r = MainActivity.radio; return r == null ? "radio not used" : r.summary(); }
     static String relaySummary() { NativeRelay r = MainActivity.relay; return r == null ? "not used" : r.summary(); }
 
     static String netInfo(Context c) {

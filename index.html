@@ -217,6 +217,7 @@ code{font-size:14px;word-break:break-all}
         <span><span class="dot" id="netDot"></span><span id="netTxt">Relay</span></span>
         <span><span class="dot" id="gpsDot"></span><span id="gpsTxt">GPS</span></span>
         <span id="appWrap" hidden><span class="dot on"></span>App</span>
+        <span id="radWrap" hidden><span class="dot" id="radDot"></span><span id="radTxt">Radio</span></span>
         <span id="scrWrap" hidden><span class="dot" id="scrDot"></span><span id="scrTxt">Screen</span></span>
       </div>
     </div>
@@ -250,6 +251,14 @@ code{font-size:14px;word-break:break-all}
         <div id="liveView" class="rview"></div>
         <span class="note" id="liveSrc"></span>
       </div>
+      <div class="field" id="radioField" hidden>
+        <span class="label">Radio unit in this vehicle</span>
+        <span class="note" id="radioState"></span>
+        <div class="row"><button id="radioPick" type="button">Choose radio unit</button></div>
+        <span class="label">Radio units heard</span>
+        <span class="note">A unit with no phone beside it (or an iPhone): choose which vehicle it is in.</span>
+        <div id="radioUnits"><span class="note">None heard yet.</span></div>
+      </div>
       <div class="field">
         <span class="label">Trip log</span>
         <span class="note" id="upStatus"></span>
@@ -271,7 +280,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.7.0 (20 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.8.0 (31 Oct 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -281,7 +290,7 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
-var APP_LATEST = "1.2.0";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_LATEST = "1.3.0";           // bump with every new app/PilotGap.apk (README: Publish)
 var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
@@ -298,6 +307,11 @@ var RESUME_MS = 600000;   // app only: a trip that stopped without End trip less
 var UNSENT_MAX = 3;         // older trip logs kept on the phone until they reach the office
 var ESTIMATE_MS = 120000;
 var PROJECT_MIN_SPD = 2;   // m/s: below this a vehicle is treated as stopped (heading is unreliable)  // stop estimating 2 min after contact lost
+var RADIO_ANNOUNCE_MS = 60000;   // 1.8.0: each app says on the radio which role its unit is with
+var RADIO_MAX_AGE_MS = 60000;    // a radio position measured longer ago than this is not used
+var RADIO_PREFER_MOBILE_MS = 3000;   // mobile positions carry accuracy and speed: used unless the radio one is 3 s newer
+var ROLE_OWNER_LOST_MS = 30000;  // C1 (audit 20 Oct): another phone may take a role only after its holder has been silent this long
+var ROLE_CONFIRM_N = 3;          // C1: a Truck 2 counts only after 3 messages (one stray message made a "ghost" Truck 2)
 var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
 var NAME  = {lead:"Lead pilot", truck:"Truck 1", truck2:"Truck 2", rear:"Rear pilot"};
 var SHORT = {lead:"Lead", truck:"Truck 1", truck2:"Truck 2", rear:"Rear"};
@@ -329,6 +343,7 @@ var S = {
   wake:null, keepOn: store.get("keepOn","0")==="1", force: store.get("forceOn","0")==="1",
   orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
   simT0:0, timers:[], layoutKey:"",
+  mob:{}, rad:{}, src:{}, owner:{}, dupOther:{}, radio:{state:"",unit:"",node:""}, radioMap:{}, radioNodes:{}, radOwner:{}, radPrev:{}, lastAnn:0,
   key:null, topicId:"", log:loadLogEarly(), lastGapState:{}, lastSample:0, gpsQuiet:false, lastUnreadable:0
 };
 if(ROLES.indexOf(S.role)<0) S.role="";
@@ -561,7 +576,7 @@ function doUpdate(){
 }
 
 /* ---------- trip shape ---------- */
-function twoTrucks(){ return S.cfg.trucks===2 || S.role==="truck2" || !!S.peers.truck2; }
+function twoTrucks(){ var o=S.owner.truck2, ro=S.radOwner.truck2; return S.cfg.trucks===2 || S.role==="truck2" || !!(S.peers.truck2 && ((o && o.n>=ROLE_CONFIRM_N) || (ro && ro.n>=ROLE_CONFIRM_N))); }
 function nm(r){ return (r==="truck" && !twoTrucks()) ? "Truck" : NAME[r]; }
 function chain(){ return twoTrucks() ? ["lead","truck","truck2","rear"] : ["lead","truck","rear"]; }
 function gapList(){
@@ -611,13 +626,19 @@ function gapInfo(aRole, bRole, range, now){
   // (trial 19 Oct: positions up to 15-30 s old gave errors of about 300-365 m at highway speed).
   var age = Math.max(staleA?ageA:0, staleB?ageB:0);
   var est = dist(project(a,ageA), project(b,ageB));   // for any length of lost contact (Ryan, 20 Oct)
+  var radio = (aRole!==S.role && S.src[aRole]==="radio") || (bRole!==S.role && S.src[bRole]==="radio");
   if(!staleA&&!staleB){
     var st = est<range.min ? "close" : est>range.max ? "far" : "ok";
-    return {state:st, value:est, raw:raw};
+    return {state:st, value:est, raw:raw, radio:radio};
+  }
+  // C2 (audit 20 Oct): this phone's own GPS has stopped. Say so; do not blame the other vehicle.
+  if((aRole===S.role && staleA) || (bRole===S.role && staleB)){
+    var ownAge = aRole===S.role ? ageA : ageB;
+    return {state:"nogps", value:est, est:est, raw:raw, who:S.role, age:ownAge, since:null, radio:radio};
   }
   var who = staleA&&staleB ? (ageA>ageB?aRole:bRole) : (staleA?aRole:bRole);
   var wp=S.peers[who], since = (wp && wp.odo!=null && S.odo!=null) ? Math.max(0,S.odo-wp.odo) : null;   // how far this vehicle has driven since that one was last heard
-  return {state:"stale", value:est, est:est, raw:raw, who:who, age:age, since:since};
+  return {state:"stale", value:est, est:est, raw:raw, who:who, age:age, since:since, radio:radio};
 }
 // Where a vehicle should be now: its last position moved along its heading by speed x age.
 function project(p, ageMs){
@@ -667,7 +688,7 @@ function connectRelay(){
 }
 function onRelayMessage(role, txt, stored){
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
-  if(!txt){ if(role!=="cfg" && role!==S.role && S.peers[role]){ delete S.peers[role]; S.ended[role]=Date.now(); S.wasStale[role]=false; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
+  if(!txt){ if(role!=="cfg" && role!==S.role && S.peers[role]){ delete S.mob[role]; delete S.rad[role]; delete S.peers[role]; delete S.owner[role]; S.ended[role]=Date.now(); S.wasStale[role]=false; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
   return unseal(txt).then(function(d){
     if(!d){ if(Date.now()-S.lastUnreadable>60000){ S.lastUnreadable=Date.now(); L("relay","unreadable message ignored ("+role+")"); } return; }
     handleMsg(role,d,!!stored);
@@ -684,6 +705,7 @@ function handleMsg(role, d, stored){
   }
   if(role==="cfg"){
     if(S.role==="truck") return;                  // Truck 1 owns the settings
+    var to=S.owner.truck; if(to && to.id!==senderId(d) && now-to.t<ROLE_OWNER_LOST_MS){ S.dupOther.truck=now; return; }   // C1: only the Truck 1 phone in use sets the gaps
     if(!validCfg(d) || typeof d.t!=="number"){ L("cfg","bad gap settings ignored"); return; }
     var changed = JSON.stringify(S.cfg)!==JSON.stringify({trucks:d.trucks, ranges:d.ranges});
     S.cfg={trucks:d.trucks, ranges:d.ranges}; S.cfgFrom="truck1"; S.cfgT=d.t;
@@ -702,13 +724,33 @@ function handleMsg(role, d, stored){
   }
   if(role===S.role){
     if(d.id===myId && !stored && typeof d.s==="number"){ S.rtt.push(Math.max(0,now-d.s)); if(S.rtt.length>60) S.rtt.shift(); }   // round trip phone -> relay -> phone, one clock
-    if(d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
+    if(senderId(d)!==phoneId && d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
     return;
   }
+  // C1 (audit 20 Oct): one phone holds each role. A second phone on the same role is ignored, and every phone
+  // says so, until the first has been silent for 30 s (e.g. it was restarted).
+  var sid=senderId(d), own=S.owner[role];
+  if(own && own.id!==sid){
+    if(now-own.t<ROLE_OWNER_LOST_MS){ S.dupOther[role]=now; if(!S.dupOtherLogged) S.dupOtherLogged={}; if(!S.dupOtherLogged[role]||now-S.dupOtherLogged[role]>60000){ S.dupOtherLogged[role]=now; L("role","a second phone is also "+nm(role)+": ignored, using the first"); } return; }
+    L("role",nm(role)+" now from another phone (the first was silent)"); own=null;
+  }
+  if(!own) own=S.owner[role]={id:sid,t:now,n:0};
+  own.t=now; own.n++;
   delete S.ended[role];
-  S.peers[role]={odo:S.odo,lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
+  S.mob[role]={odo:S.odo,lat:d.lat,lon:d.lon,spd:typeof d.spd==="number"?d.spd:null,hdg:typeof d.hdg==="number"?d.hdg:null,
     acc:typeof d.acc==="number"?d.acc:null,t:at,
     lag: stored ? null : now-(typeof d.s==="number"?d.s:d.t)};   // arrival minus sender's send time: delay plus the two phones' clock difference
+  refreshPeer(role);
+}
+function senderId(d){ return (d && (d.pid||d.id)) || "?"; }   // 1.8.0 phones send their lasting phone id; older ones only a per-page id
+/* 1.8.0: a vehicle's position comes from mobile (relay) or radio, whichever is newer; mobile preferred when close */
+function refreshPeer(r){
+  if(r===S.role) return;
+  var m=S.mob[r], q=S.rad[r], p = (m && (!q || m.t>=q.t-RADIO_PREFER_MOBILE_MS)) ? m : q;
+  if(!p){ delete S.peers[r]; return; }
+  var src = p===m ? "mobile" : "radio";
+  if(S.src[r]!==src){ if(S.src[r]) L("source",nm(r)+" now from "+src); S.src[r]=src; }
+  S.peers[r]=p;
 }
 function publishMine(force){
   var f=S.lastFix; if(!f||!S.client||!S.connected) return;
@@ -716,13 +758,13 @@ function publishMine(force){
   if(!force && now-S.lastPub<2000) return;
   if(now-f.time>30000) return;             // GPS has gone quiet: stop claiming a fresh position
   S.lastPub=now;
-  var msg={id:myId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:f.time,s:now};   // t = when the position was measured, s = when sent (trial 19 Oct: an old fix was sent as new)
+  var msg={id:myId,pid:phoneId,lat:+f.lat.toFixed(6),lon:+f.lon.toFixed(6),spd:f.spd,hdg:f.hdg,acc:f.acc,t:f.time,s:now};   // t = when the position was measured, s = when sent (trial 19 Oct: an old fix was sent as new)
   var c=S.client, tp=topic(S.role);
   seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); S.txCount=(S.txCount||0)+1; } });
 }
 function publishCfg(){
   if(S.role!=="truck"||!S.client||!S.connected) return;
-  var msg={id:myId,trucks:S.cfg.trucks,ranges:S.cfg.ranges,t:Date.now()};
+  var msg={id:myId,pid:phoneId,trucks:S.cfg.trucks,ranges:S.cfg.ranges,t:Date.now()};
   var c=S.client, tp=topic("cfg");
   seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
 }
@@ -739,7 +781,7 @@ function trackLine(now,results){
   if(S.practice || now-(S.lastTrk||0)<TRACK_MS) return;
   S.lastTrk=now;
   var f=S.lastFix;
-  var gaps=results.map(function(x){ var g=x.info; return x.gap.key+"="+(g.value!=null?Math.round(g.value)+(g.state==="stale"?"s":"")+(g.raw!=null&&Math.abs(g.raw-g.value)>=20?"(raw "+Math.round(g.raw)+")":""):"-"); }).join(" ");
+  var gaps=results.map(function(x){ var g=x.info; return x.gap.key+"="+(g.value!=null?Math.round(g.value)+(g.state==="stale"?"s":g.state==="nogps"?"g":"")+(g.radio?"R":"")+(g.raw!=null&&Math.abs(g.raw-g.value)>=20?"(raw "+Math.round(g.raw)+")":""):"-"); }).join(" ");
   if(!f){ L("trk","no fix | "+gaps); return; }
   L("trk","±"+Math.round(f.acc||0)+"m "+kmh(f.spd).replace(" ","")+" h"+(f.hdg!=null?Math.round(f.hdg):"-")+" fix "+((now-f.time)/1000).toFixed(1)+"s "+(f.net?"net":"gps")+" | "+gaps);
 }
@@ -754,6 +796,7 @@ function relayDiag(now){
    Android app drives once a second; the page's own timers stop there (seen on a real phone, 18 Oct). */
 function periodic(now){
   if(S.practice) return;
+  radioAnnounce(now);
   if(S.logDay && dayKey(now)!==S.logDay) rollLog("new day");
   if(now-(S.lastRepub||0)>=REPUBLISH_MS){
     S.lastRepub=now; publishMine(true); publishCfg();
@@ -950,15 +993,21 @@ function setGap(g,info){
   if(info.state==="none"){ box.classList.add("none"); num.innerHTML="–";
     var en=S.ended[info.missing]; sub.textContent = en ? nm(info.missing)+" ended the trip at "+hhmm(en) : "Waiting for "+nm(info.missing).toLowerCase(); return; }
   num.innerHTML=fmtM(info.value);
-  if(info.state==="ok"){ box.classList.add("ok"); sub.textContent="In range"; }
-  else if(info.state==="far"){ box.classList.add("bad"); sub.textContent="Too far · over by "+fmtMplain(info.value-r.max); }
-  else if(info.state==="close"){ box.classList.add("bad"); sub.textContent="Too close · under by "+fmtMplain(r.min-info.value); }
+  var via = info.radio ? " · radio" : "";
+  if(info.state==="ok"){ box.classList.add("ok"); sub.textContent="In range"+via; }
+  else if(info.state==="far"){ box.classList.add("bad"); sub.textContent="Too far · over by "+fmtMplain(info.value-r.max)+via; }
+  else if(info.state==="close"){ box.classList.add("bad"); sub.textContent="Too close · under by "+fmtMplain(r.min-info.value)+via; }
   else {
     box.classList.add("stale");
     num.innerHTML='<span class="est">Estimated gap</span>'+fmtM(info.est);   // Ryan, 20 Oct: estimate big on the left
     side.hidden=false;
-    side.innerHTML='<span class="tag">Last seen</span><b>'+fmtAge(info.age)+' ago</b><b>'+(info.since!=null?fmtMplain(info.since)+' ago':'–')+'</b>';
-    sub.textContent="Lost contact";
+    if(info.state==="nogps"){
+      side.innerHTML='<span class="tag">This phone</span><b>No GPS</b><b>'+fmtAge(info.age)+'</b>';
+      sub.textContent="This phone has lost GPS";
+    } else {
+      side.innerHTML='<span class="tag">Last seen</span><b>'+fmtAge(info.age)+' ago</b><b>'+(info.since!=null?fmtMplain(info.since)+' ago':'–')+'</b>';
+      sub.textContent="Lost contact"+via;
+    }
   }
 }
 function renderRangePanel(){
@@ -978,8 +1027,8 @@ function render(){
   results.forEach(function(x){
     setGap(x.gap,x.info);
     var k=x.gap.key, st=x.info.state, prev=S.lastGapState[k];
-    if(st==="stale") S.lastEst[k]={est:x.info.est, age:x.info.age, since:x.info.since};
-    else if(prev==="stale" && x.info.value!=null && S.lastEst[k]){   // how good was the estimate? (Ryan, 20 Oct)
+    if(st==="stale"||st==="nogps") S.lastEst[k]={est:x.info.est, age:x.info.age, since:x.info.since};
+    else if((prev==="stale"||prev==="nogps") && x.info.value!=null && S.lastEst[k]){   // how good was the estimate? (Ryan, 20 Oct)
       var le=S.lastEst[k]; L("estimate",GAPNAME[k]+" back after "+fmtAge(le.age)+": estimate "+Math.round(le.est)+" m, actual "+Math.round(x.info.value)+" m, out by "+Math.round(Math.abs(x.info.value-le.est))+" m"+(le.since!=null?" (this vehicle drove "+Math.round(le.since)+" m meanwhile)":"")); delete S.lastEst[k];
     }
     if(st!==prev){
@@ -998,7 +1047,8 @@ function render(){
   }
   if(!S.practice){
     var quiet = !S.lastFix || now-S.lastFix.time>15000;
-    if(quiet!==S.gpsQuiet && (S.lastFix || now-S.tripStart>30000)){ S.gpsQuiet=quiet; L("gps",quiet?"no GPS fix for 15 s":"GPS back"); }
+    if(quiet!==S.gpsQuiet && (S.lastFix || now-S.tripStart>30000)){ S.gpsQuiet=quiet; L("gps",quiet?"no GPS fix for 15 s":"GPS back");
+      if(S.lastFix && now>=S.mutedUntil){ beep(440,0.35,0); say(quiet?"gps_lost":"gps_back", quiet?"This phone has lost GPS":"GPS back", 0); } }   // C2: say it, once each way
   }
   chain().forEach(function(r){
     var p=S.peers[r], el=$("spd_"+r); if(!el) return;
@@ -1013,6 +1063,9 @@ function render(){
   var gpsOk = S.practice || (f && now-f.time<15000);
   $("gpsDot").className="dot "+(gpsOk?"on":"off");
   $("gpsTxt").textContent = S.practice ? "Pretend GPS" : f ? ("GPS ±"+Math.round(f.acc)+" m") : "GPS…";
+  var rOn=radioAvail() && !S.practice && !!S.radio.unit;
+  $("radWrap").hidden=!rOn;
+  if(rOn){ $("radDot").className="dot "+(S.radio.state==="connected"?"on":"off"); $("radTxt").textContent= S.radio.state==="connected" ? "Radio" : "Radio off"; }
   $("scrWrap").hidden=!(S.keepOn||S.force);
   if(S.keepOn||S.force){
     if(!S.nativeKeep){ wakeLock(); videoCheck(); }
@@ -1021,11 +1074,12 @@ function render(){
     $("scrDot").className="dot "+(held?"on":"off");
     $("scrTxt").textContent = !held ? "Screen may lock" : S.nativeKeep ? "Screen on (app)" : vidOn ? "Screen forced on" : "Screen on";
   }
-  if(!$("settings").hidden) renderRangePanel();
+  if(!$("settings").hidden){ renderRangePanel(); renderRadioPanel(now); }
   /* banners */
   var b=[];
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
-  if(!S.practice && !S.connected) b.push({text:"No connection to the relay. Gaps freeze until mobile signal returns."});
+  if(!S.practice && !S.connected) b.push({text: S.radio.state==="connected" ? "No mobile connection. Gaps come from the radio only." : "No connection to the relay. Gaps freeze until mobile signal returns."});
+  ROLES.forEach(function(r){ if(r!==S.role && now-(S.dupOther[r]||0)<STALE_MS) b.push({text:"Two phones are set as "+nm(r)+". Using the first one; the other is ignored."}); });
   if(S.cryptoErr) b.push({text:S.cryptoErr});
   if(S.saverWarn && !S.practice) b.push({text:S.saverWarn});
   if(appOutdated()) b.push({text:"Update the app to "+APP_LATEST+" (this phone has "+appVer()+"). When stopped: tap End trip, then Download app update on the start screen."});
@@ -1064,6 +1118,99 @@ function render(){
   trackLine(now,results);
   periodic(now);
   if(now-(S.lastPersist||0)>10000){ S.lastPersist=now; saveLogLocal(); if(!S.practice) markRunning(); }
+}
+
+/* ---------- radio (1.8.0, Ryan 1b 31 Oct: Meshtastic units, Android app only) ---------- */
+function radioAvail(){ return !!(NATIVE && typeof NATIVE.radioStart==="function"); }
+function radioTag(){ return (S.topicId||"").slice(0,8); }   // the trip, without saying the trip code on the air
+function manualRoles(){ try{ var m=JSON.parse(store.get("radioRoles","{}")); return (m && typeof m==="object") ? m : {}; }catch(e){ return {}; } }
+function setManualRole(node,role){ var m=manualRoles(); if(role) m[node]=role; else delete m[node]; store.set("radioRoles",JSON.stringify(m)); L("radio","unit "+node+" set by hand to "+(role?nm(role):"not used")); }
+function radioRoleOf(node,now){
+  var a=S.radioMap[node];
+  if(a && now-a.t<10*60000) return {role:a.role, from:"phone"};
+  var m=manualRoles()[node];
+  return (m && ROLES.indexOf(m)>=0) ? {role:m, from:"hand"} : null;
+}
+function radioAnnounce(now){
+  if(!radioAvail() || S.radio.state!=="connected" || !radioTag() || now-S.lastAnn<RADIO_ANNOUNCE_MS) return;
+  S.lastAnn=now;
+  try{ if(NATIVE.radioSend("PG1 "+radioTag()+" "+S.role+" "+phoneId)) L("radio","told the other units: this unit is "+nm(S.role)); }catch(e){}
+}
+window.__pgRadio=function(ev,a,b){
+  var now=Date.now();
+  if(ev==="state"){ var was=S.radio.state; S.radio.state=String(a||""); if(b) S.radio.unit=String(b); if(!$("run").hidden && was!==S.radio.state) L("radio","link "+S.radio.state+(S.radio.unit?" ("+S.radio.unit+")":"")); if(S.radio.state==="connected") S.lastAnn=0; return; }
+  if(ev==="mynode"){ S.radio.node=String(a||""); return; }
+  if($("run").hidden || S.practice) return;
+  var info={}; try{ info=JSON.parse(b||"{}")||{}; }catch(e){}
+  if(ev==="text") onRadioText(String(a), info, now);
+  else if(ev==="pos") onRadioPos(String(a), info, now);
+};
+function onRadioText(node, info, now){
+  var m=/^PG1 ([0-9a-f]{8}) (lead|truck|truck2|rear) ([a-z0-9]{1,12})$/.exec(String(info.text||""));
+  if(!m) return;
+  if(m[1]!==radioTag()){ L("radio","unit "+node+" is on another trip ("+m[2]+")"); return; }
+  var prev=S.radioMap[node];
+  S.radioMap[node]={role:m[2], pid:m[3], t:now};
+  if(!prev || prev.role!==m[2]) L("radio","unit "+node+" is "+nm(m[2])+" (its phone says)");
+}
+function onRadioPos(node, info, now){
+  if(typeof info.lat!=="number"||typeof info.lon!=="number"||Math.abs(info.lat)>90||Math.abs(info.lon)>180||(info.lat===0&&info.lon===0)) return;
+  var me=S.peers[S.role], d = me ? Math.round(dist(me,info)) : null;
+  var line="unit "+node+" snr "+(info.snr!=null?info.snr:"-")+" rssi "+(info.rssi!=null?info.rssi:"-")+" @"+info.lat.toFixed(6)+","+info.lon.toFixed(6)+
+    (info.t?" age "+Math.round((now-info.t*1000)/1000)+"s":"")+(info.spdRaw!=null?" spdRaw "+info.spdRaw:"")+(info.trkRaw!=null?" trkRaw "+info.trkRaw:"")+(info.sats!=null?" sats "+info.sats:"")+(d!=null?" from me "+d+" m":"");
+  S.radioNodes[node]={t:now, snr:info.snr, rssi:info.rssi, lat:info.lat, lon:info.lon};
+  if(node===S.radio.node){ if(now-(S.ownUnitLogT||0)>60000){ S.ownUnitLogT=now; L("radio","own "+line); } return; }   // this vehicle's own unit
+  var rr=radioRoleOf(node,now);
+  if(!rr){ L("radio","heard "+line+" (not assigned)"); return; }
+  var role=rr.role;
+  L("radio",nm(role)+" "+line+(rr.from==="hand"?" (set by hand)":""));
+  if(role===S.role) return;
+  if(rr.from==="phone" && S.ended[role]) return;
+  // C1 for radio: one unit per role
+  var ro=S.radOwner[role];
+  if(ro && ro.node!==node && now-ro.t<ROLE_OWNER_LOST_MS){ S.dupOther[role]=now; return; }
+  if(!ro || ro.node!==node) ro=S.radOwner[role]={node:node,t:now,n:0};
+  ro.t=now; ro.n++;
+  var posT = info.t ? info.t*1000 : null;
+  if(posT && now-posT>RADIO_MAX_AGE_MS) return;
+  var at = (posT && posT<=now) ? posT : now;
+  // speed and direction from this unit's last two positions (the unit's own speed units are not yet proven; logged raw)
+  var pv=S.radPrev[node], spd=null, hdg=null;
+  if(pv && at-pv.t>=3000 && at-pv.t<=60000){ var dd=dist(pv,info); spd=dd/((at-pv.t)/1000); hdg = dd>10 ? bearing(pv,info) : pv.hdg; }
+  S.radPrev[node]={lat:info.lat, lon:info.lon, t:at, hdg:hdg};
+  delete S.ended[role];
+  S.rad[role]={odo:S.odo, lat:info.lat, lon:info.lon, spd:spd, hdg:hdg, acc:null, t:at, lag:null, via:"radio"};
+  refreshPeer(role);
+}
+function renderRadioPanel(now){
+  var show=radioAvail() && !S.practice; $("radioField").hidden=!show; if(!show) return;
+  $("radioState").textContent = !S.radio.unit ? "No unit chosen. The radio keeps gaps going where there is no mobile signal." :
+    S.radio.unit+": "+({connected:"connected",connecting:"connecting…",pairing:"pairing: enter the unit's PIN when asked",off:"off",nopermission:"Bluetooth not allowed for Pilot Gap",nobluetooth:"Bluetooth is off"}[S.radio.state]||S.radio.state||"off");
+  var nodes=Object.keys(S.radioNodes).filter(function(n){ return n!==S.radio.node; }).sort();
+  var key=nodes.map(function(n){ var r=radioRoleOf(n,now); return n+":"+(r?r.role+r.from:""); }).join(",");
+  var host=$("radioUnits");
+  if(host.dataset.key!==key){
+    host.dataset.key=key;
+    if(!nodes.length){ host.innerHTML='<span class="note">None heard yet.</span>'; }
+    else {
+      host.innerHTML="";
+      nodes.forEach(function(n){
+        var r=radioRoleOf(n,now), row=document.createElement("div"); row.className="row";
+        var lab=document.createElement("span"); lab.textContent=n+" "; row.appendChild(lab);
+        if(r && r.from==="phone"){ var t=document.createElement("span"); t.className="note"; t.textContent=nm(r.role)+" (its phone says)"; row.appendChild(t); }
+        else {
+          var sel=document.createElement("select"); sel.setAttribute("aria-label","Vehicle for radio unit "+n);
+          [["","Not used"]].concat(ROLES.map(function(x){ return [x,NAME[x]]; })).forEach(function(o){ var op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; sel.appendChild(op); });
+          sel.value = r ? r.role : "";
+          sel.onchange=function(){ setManualRole(n, sel.value); host.dataset.key=""; };
+          row.appendChild(sel);
+        }
+        var age=document.createElement("span"); age.className="note"; age.id="radAge_"+n.replace(/[^a-z0-9]/gi,""); row.appendChild(age);
+        host.appendChild(row);
+      });
+    }
+  }
+  nodes.forEach(function(n){ var e=$("radAge_"+n.replace(/[^a-z0-9]/gi,"")); if(e) e.textContent=" heard "+fmtAge(now-S.radioNodes[n].t)+" ago"; });
 }
 
 /* ---------- range inputs (pre = "s_" setup screen, "l_" live settings) ---------- */
@@ -1153,6 +1300,7 @@ function start(){
   S.peers={}; S.wasStale={}; S.everLive={}; S.skew={}; S.alarmed={}; S.rtt=[]; S.lastTrk=0; S.ended={}; S.odo=0; S.lastEst={}; S.dupRoleSeen=0; S.orderBadSince=0; S.layoutKey="";
   S.lastGapState={}; S.lastSample=0; S.gpsQuiet=false; S.tripStart=Date.now(); S.cryptoErr="";
   S.lastRepub=0; S.lastUpload=0; S.lastSend=0; S.oldIgnored={};
+  S.mob={}; S.rad={}; S.src={}; S.owner={}; S.dupOther={}; S.radioMap={}; S.radioNodes={}; S.radOwner={}; S.radPrev={}; S.lastAnn=0;
   // continue the same log only for the same kind of trip (real/practice), role and driver, within 6 h
   var ag0=agreement(), logKey=(S.practice?"P":"R")+"|"+S.role+"|"+(ag0?ag0.name:"");
   var old=loadLog(); S.log = (old.length && Date.now()-old[old.length-1][0]<LOG_JOIN_MS && dayKey(old[0][0])===dayKey(Date.now()) && logName() && store.get("logkey","")===logKey) ? old : [];   // same day only
@@ -1167,6 +1315,7 @@ function start(){
   if(NATIVE) L("start","running in the Android app "+NATIVE.appVersion()+" (keeps going behind other apps)");
   L("start","screen: keep on "+(S.keepOn?"on":"off")+", force "+(S.force?"on":"off")+" | "+navigator.userAgent);
   if(!S.practice && NATIVE){ try{ NATIVE.tripStart(S.role); }catch(e){ L("error","app tripStart: "+e.message); } }
+  if(!S.practice && radioAvail()){ try{ NATIVE.radioStart(); }catch(e){ L("error","app radioStart: "+e.message); } }
   if(S.practice){ S.simT0=Date.now(); }
   else {
     startGps();
@@ -1192,6 +1341,7 @@ function teardown(clearMine){
     try{ if(clearMine && S.connected) c.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){}   // before tripEnd, while the relay is surely running
     setTimeout(function(){ try{ c.end(true); }catch(e){} },300);
   }
+  if(radioAvail()){ try{ NATIVE.radioStop(); }catch(e){} }
   if(NATIVE){ try{ NATIVE.tripEnd(); }catch(e){} }
   if(S.watchId!=null){ try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){} S.watchId=null; }
   S.connected=false; S.lastFix=null;
@@ -1242,6 +1392,7 @@ window.addEventListener("online",function(){ if(!$("run").hidden) L("net","phone
 $("saveLog").addEventListener("click",function(){ L("log","saved during trip"); saveLogLocal(); saveLogFile(S.log); });
 $("saveLastLog").addEventListener("click",function(){ saveLogFile(loadLog()); });
 $("changeRole").addEventListener("click",goSetup);
+$("radioPick").addEventListener("click",function(){ if(radioAvail()){ L("radio","choosing a unit"); try{ NATIVE.radioPick(); }catch(e){ L("error","app radioPick: "+e.message); } } });
 $("keepOn2").addEventListener("change",function(){ setScreen($("keepOn2").checked,S.force); });
 $("forceOn2").addEventListener("change",function(){ setScreen(S.keepOn,$("forceOn2").checked); });
 $("s_two").addEventListener("change",function(){ $("s_midRow").hidden=!$("s_two").checked; });
@@ -1285,7 +1436,7 @@ $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 setInterval(function(){ if($("run").hidden){ if(store.get("uppending","")==="1") uploadLog("retry"); else sendUnsent(); } },120000);   // on the start screen, keep trying to send waiting logs
 
-window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,saveLogLocal:saveLogLocal,rollLog:rollLog,logName:logName,twoTrucks:twoTrucks};
+window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,saveLogLocal:saveLogLocal,rollLog:rollLog,logName:logName,twoTrucks:twoTrucks,refreshPeer:refreshPeer,radioTag:radioTag,phoneId:phoneId};
 })();
 </script>
 </body>
