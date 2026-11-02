@@ -39,6 +39,9 @@ h1 span{background:var(--accent);color:var(--on-accent);padding:0 6px}
 .roles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .role{appearance:none;border:2px solid var(--line);background:var(--panel);color:var(--fg);border-radius:10px;
   padding:14px 6px;font:700 20px/1.1 var(--display);text-transform:uppercase;cursor:pointer}
+.role.wide{grid-column:1/-1}
+.ctlrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.ctlrow .note{grid-column:1/-1}
 .role small{display:block;font:400 12px/1.3 var(--body);text-transform:none;color:var(--muted);margin-top:4px}
 .role[aria-pressed="true"]{border-color:var(--fg);background:var(--accent);color:var(--on-accent)}
 .role[aria-pressed="true"] small{color:var(--on-accent)}
@@ -159,6 +162,7 @@ code{font-size:14px;word-break:break-all}
         <button class="role" type="button" data-role="truck" aria-pressed="false">Truck 1<small>front truck, sets the gaps</small></button>
         <button class="role" type="button" data-role="truck2" aria-pressed="false">Truck 2<small>second truck, if any</small></button>
         <button class="role" type="button" data-role="rear" aria-pressed="false">Rear<small>pilot, behind</small></button>
+        <button class="role wide" type="button" data-role="spectator" aria-pressed="false">Spectator<small>watching only: not counted in any gap, no alarms</small></button>
       </div>
     </div>
 
@@ -251,12 +255,24 @@ code{font-size:14px;word-break:break-all}
         <div id="liveView" class="rview"></div>
         <span class="note" id="liveSrc"></span>
       </div>
+      <div class="field" id="ctlField" hidden>
+        <span class="label">Who is in charge of this trip</span>
+        <span class="note" id="ctlState"></span>
+        <div class="row"><button id="ctlNew" type="button">New trip: I'm in charge</button></div>
+        <span class="label">Phones on this trip</span>
+        <div id="ctlPhones"><span class="note">None heard yet.</span></div>
+        <div id="ctlUnitsBox" hidden>
+          <span class="label">Radio units: which vehicle each one is in</span>
+          <div id="ctlUnits"></div>
+        </div>
+        <div class="row" id="ctlHandRow" hidden><select id="ctlHandTo" aria-label="Hand over to"></select><button id="ctlHand" type="button">Hand over</button></div>
+      </div>
       <div class="field" id="radioField" hidden>
         <span class="label">Radio unit in this vehicle</span>
         <span class="note" id="radioState"></span>
-        <div class="row"><button id="radioPick" type="button">Choose radio unit</button></div>
+        <div class="row" id="radioPickRow"><button id="radioPick" type="button">Choose radio unit</button></div>
         <span class="label">Radio units heard</span>
-        <span class="note">A unit with no phone beside it (or an iPhone): choose which vehicle it is in.</span>
+        <span class="note" id="radioUnitsNote">A unit with no phone beside it (or an iPhone): choose which vehicle it is in.</span>
         <div id="radioUnits"><span class="note">None heard yet.</span></div>
       </div>
       <div class="field">
@@ -280,7 +296,7 @@ code{font-size:14px;word-break:break-all}
 (function(){
 "use strict";
 
-var VERSION = "1.8.2 (31 Oct 2026)";  // bump with every change; see CHANGELOG.md
+var VERSION = "1.9.0 (2 Nov 2026)";  // bump with every change; see CHANGELOG.md
 var RELAY = "wss://broker.hivemq.com:8884/mqtt";
 var TOPIC_BASE = "bhe-pilotgap/v2/";  // v2: topic is a hash of the trip code and every message is scrambled with it
 var MIN_CODE = 4;   // 6+ was declined by Ryan for now (18 Oct); ask again once out of testing
@@ -290,7 +306,7 @@ var UPLOAD_KEY = "bhe-pg-7Kq2vX9m"; // must match server/upload-log.gs; stops ra
 var UPLOAD_EVERY_MS = 600000;      // send the log every 10 min while the relay is connected
 var NATIVE = (window.PilotGapNative && typeof window.PilotGapNative.tripStart==="function") ? window.PilotGapNative : null;  // set when running inside the Android app
 var APP_URL = "app/PilotGap.apk";   // latest Android app, published with the page
-var APP_LATEST = "1.3.2";           // bump with every new app/PilotGap.apk (README: Publish)
+var APP_LATEST = "1.4.0";           // bump with every new app/PilotGap.apk (README: Publish)
 var APP_DL = "https://github.com/Bedfordharbour/pilot-gap/raw/main/app/PilotGap.apk";   // another site, so the app opens it in the phone's browser, which downloads it (the app itself cannot download files)
 var AGREE_V = 1;                   // bump when the agreement wording changes, so every phone is asked again
 var AGREE_TEXT = "While Pilot Gap is running, this phone shares its location, speed and direction with the other vehicles on the trip. These are also recorded in a trip log that is sent to Bedford Harbour Engineering. I agree to share my location as part of my piloting / driver duties. Sharing and recording stop when I tap End trip or close the page.";
@@ -313,8 +329,17 @@ var RADIO_PREFER_MOBILE_MS = 3000;   // mobile positions carry accuracy and spee
 var ROLE_OWNER_LOST_MS = 30000;  // C1 (audit 20 Oct): another phone may take a role only after its holder has been silent this long
 var ROLE_CONFIRM_N = 3;          // C1: a Truck 2 counts only after 3 messages (one stray message made a "ghost" Truck 2)
 var ROLES = ["lead","truck","truck2","rear"];          // "truck" is Truck 1 (kept as "truck" so v1.0 phones still match)
-var NAME  = {lead:"Lead pilot", truck:"Truck 1", truck2:"Truck 2", rear:"Rear pilot"};
-var SHORT = {lead:"Lead", truck:"Truck 1", truck2:"Truck 2", rear:"Rear"};
+var NAME  = {lead:"Lead pilot", truck:"Truck 1", truck2:"Truck 2", rear:"Rear pilot", spectator:"Spectator"};
+var SHORT = {lead:"Lead", truck:"Truck 1", truck2:"Truck 2", rear:"Rear", spectator:"Spectator"};
+/* 1.9.0 (Ryan 3g, 4, 5; 2 Nov): one phone is in charge ("New trip"); every other phone is a spectator until it gives
+   them a role. Road test 1-2 Nov: a phone 213 km away counted as the lead, phones took each other's radio units. */
+var CTL_MS = 10000;          // the phone in charge re-sends who-is-what every 10 s
+var CTL_LAPSE_MS = 600000;   // in charge not heard for 10 min: say so (the last assignment stays in force)
+var PRES_MS = 10000;         // every phone says who it is every 10 s (name, role, radio unit)
+var PRES_SHOW_MS = 300000;   // phones not heard for 5 min drop off the list
+var SAMEVEH_RSSI = -20;      // 5c: a unit this loud while moving is in this vehicle (1 Nov: -3 to -6 dBm in the same truck; 2 Nov: -32 to -60 in the yard)
+var SAMEVEH_SPD = 5;         // m/s
+var SAMEVEH_MS = 60000;
 var GAPNAME = {front:"Front gap", mid:"Truck gap", rear:"Rear gap"};
 var DEFAULT_CFG = {trucks:1, ranges:{front:{min:500,max:2000}, mid:{min:0,max:100}, rear:{min:100,max:1000}}};
 var TRUCK_SVG = '<svg viewBox="0 0 64 36" aria-hidden="true"><path fill="currentColor" d="M2 4h36v22H2z"/><path fill="currentColor" d="M40 10h12l8 9v7H40z"/><path fill="var(--bg)" d="M44 13h7l5 6H44z"/><circle cx="12" cy="29" r="5" fill="currentColor"/><circle cx="12" cy="29" r="2" fill="var(--bg)"/><circle cx="50" cy="29" r="5" fill="currentColor"/><circle cx="50" cy="29" r="2" fill="var(--bg)"/><path fill="var(--accent)" d="M6 8h28v4H6z"/></svg>';
@@ -344,9 +369,11 @@ var S = {
   orderBadSince:0, orderSnoozeUntil:0, dupRoleSeen:0, gpsError:"",
   simT0:0, timers:[], layoutKey:"",
   mob:{}, rad:{}, src:{}, owner:{}, dupOther:{}, radio:{state:"",unit:"",node:""}, radioMap:{}, radioNodes:{}, radOwner:{}, radPrev:{}, lastAnn:0,
+  ctl:null, ctlHeard:0, presence:{}, sameVeh:{}, ignoredLog:{},
   key:null, topicId:"", log:loadLogEarly(), lastGapState:{}, lastSample:0, gpsQuiet:false, lastUnreadable:0
 };
-if(ROLES.indexOf(S.role)<0) S.role="";
+if(ROLES.indexOf(S.role)<0 && S.role!=="spectator") S.role="";
+function isRole(r){ return ROLES.indexOf(r)>=0; }
 
 /* ---------- trip log (8a) ---------- */
 function loadLog(){ try{ var l=JSON.parse(store.get("lastlog","[]")); return Array.isArray(l)?l:[]; }catch(e){ return []; } }
@@ -527,7 +554,7 @@ function clearRunning(){ try{ localStorage.removeItem("pg_running"); }catch(e){}
 function resumeIfStopped(){
   if(!NATIVE) return false;
   var r=null; try{ r=JSON.parse(store.get("running","null")); }catch(e){}
-  if(!r || ROLES.indexOf(r.role)<0 || !r.trip || r.trip==="PRACTICE" || !(Date.now()-r.t<RESUME_MS) || !agreement()){ clearRunning(); return false; }
+  if(!r || (ROLES.indexOf(r.role)<0 && r.role!=="spectator") || !r.trip || r.trip==="PRACTICE" || !(Date.now()-r.t<RESUME_MS) || !agreement()){ clearRunning(); return false; }
   $("trip").value=r.trip; $("practice").checked=false; pickRole(r.role);
   start();
   if($("run").hidden) return false;
@@ -687,6 +714,10 @@ function connectRelay(){
   c.on("message",function(t,payload,packet){ if(!mine()) return; S.lastRx=Date.now(); S.rxCount=(S.rxCount||0)+1; onRelayMessage(t.split("/").pop(), payload.toString(), !!(packet&&packet.retain)); });
 }
 function onRelayMessage(role, txt, stored){
+  if(role==="ctl" || /^p-[a-z0-9]{1,12}$/.test(role)){   // 1.9.0: who is in charge, and who each phone is
+    if(!txt) return Promise.resolve();
+    return unseal(txt).then(function(d){ if(!d) return; if(role==="ctl") handleCtl(d,!!stored); else handlePresence(d,!!stored); });
+  }
   if(role!=="cfg" && ROLES.indexOf(role)<0) return Promise.resolve();
   if(!txt){ if(role!=="cfg" && role!==S.role && S.peers[role]){ delete S.mob[role]; delete S.rad[role]; delete S.peers[role]; delete S.owner[role]; S.ended[role]=Date.now(); S.wasStale[role]=false; L("peer",nm(role)+" ended the trip"); } return Promise.resolve(); }
   return unseal(txt).then(function(d){
@@ -705,6 +736,7 @@ function handleMsg(role, d, stored){
   }
   if(role==="cfg"){
     if(S.role==="truck") return;                  // Truck 1 owns the settings
+    if(ctlOn()){ var tp=ctlPidFor("truck"); if(!tp || senderId(d)!==tp) return; }   // 1.9.0: only the phone given Truck 1
     var to=S.owner.truck; if(to && to.id!==senderId(d) && now-to.t<ROLE_OWNER_LOST_MS){ S.dupOther.truck=now; return; }   // C1: only the Truck 1 phone in use sets the gaps
     if(!validCfg(d) || typeof d.t!=="number"){ L("cfg","bad gap settings ignored"); return; }
     var changed = JSON.stringify(S.cfg)!==JSON.stringify({trucks:d.trucks, ranges:d.ranges});
@@ -727,6 +759,9 @@ function handleMsg(role, d, stored){
     if(senderId(d)!==phoneId && d.id!==myId && now-at<STALE_MS) S.dupRoleSeen=now;
     return;
   }
+  // 1.9.0: with a phone in charge, a role's position is used only from the phone it gave that role to
+  if(ctlOn()){ var ap=ctlPidFor(role), sp=senderId(d);
+    if(!ap || sp!==ap){ var lk=role+"|"+sp; if(!S.ignoredLog[lk] || now-S.ignoredLog[lk]>300000){ S.ignoredLog[lk]=now; L("role","ignored "+nm(role)+" position from phone "+sp+" (not given that role by the phone in charge)"); } return; } }
   // C1 (audit 20 Oct): one phone holds each role. A second phone on the same role is ignored, and every phone
   // says so, until the first has been silent for 30 s (e.g. it was restarted).
   var sid=senderId(d), own=S.owner[role];
@@ -753,7 +788,7 @@ function refreshPeer(r){
   S.peers[r]=p;
 }
 function publishMine(force){
-  var f=S.lastFix; if(!f||!S.client||!S.connected) return;
+  var f=S.lastFix; if(!f||!S.client||!S.connected||!isRole(S.role)) return;   // a spectator sends no position
   var now=Date.now();
   if(!force && now-S.lastPub<2000) return;
   if(now-f.time>30000) return;             // GPS has gone quiet: stop claiming a fresh position
@@ -797,6 +832,7 @@ function relayDiag(now){
 function periodic(now){
   if(S.practice) return;
   radioAnnounce(now);
+  publishPresence(now); if(amMaster() && now-(S.lastCtl||0)>=CTL_MS) publishCtl();
   if(S.logDay && dayKey(now)!==S.logDay) rollLog("new day");
   if(now-(S.lastRepub||0)>=REPUBLISH_MS){
     S.lastRepub=now; publishMine(true); publishCfg();
@@ -915,6 +951,7 @@ function say(key,text,every){
   try{ if("speechSynthesis" in window){ var u=new SpeechSynthesisUtterance(text); u.lang="en-AU"; u.rate=1.05; speechSynthesis.speak(u); } }catch(e){}
 }
 function alarms(results,now){
+  if(!isRole(S.role)) return;   // a spectator raises no alarms
   var muted = now<S.mutedUntil;
   chain().forEach(function(r){
     if(r===S.role) return;
@@ -950,6 +987,7 @@ function alarms(results,now){
 
 /* ---------- role order check (uses Truck 1's direction of travel) ---------- */
 function orderCheck(now){
+  if(!isRole(S.role)) return false;
   var t=S.peers.truck;
   if(!t||t.hdg==null||!(t.spd>4)||now-t.t>STALE_MS){ S.orderBadSince=0; return false; }
   function fresh(p){ return p && now-p.t<STALE_MS && dist(t,p)>150; }
@@ -1074,13 +1112,19 @@ function render(){
     $("scrDot").className="dot "+(held?"on":"off");
     $("scrTxt").textContent = !held ? "Screen may lock" : S.nativeKeep ? "Screen on (app)" : vidOn ? "Screen forced on" : "Screen on";
   }
-  if(!$("settings").hidden){ renderRangePanel(); renderRadioPanel(now); }
+  if(!$("settings").hidden){ renderRangePanel(); renderCtlPanel(now); renderRadioPanel(now); }
   /* banners */
   var b=[];
   if(S.gpsError && !S.practice) b.push({text:S.gpsError});
   if(!S.practice && !S.connected) b.push({text: S.radio.state==="connected" ? "No mobile connection. Gaps come from the radio only." : "No connection to the relay. Gaps freeze until mobile signal returns."});
   ROLES.forEach(function(r){ if(r!==S.role && now-(S.dupOther[r]||0)<STALE_MS) b.push({text:"Two phones are set as "+nm(r)+". Using the first one; the other is ignored."}); });
   if(S.cryptoErr) b.push({text:S.cryptoErr});
+  if(!S.practice && S.removed) b.push({text:"The phone in charge removed this phone from the trip. Tap End trip."});
+  else if(!S.practice && ctlOn() && S.role==="spectator") b.push({text:"Spectator: this phone is not counted in any gap. "+(amMaster()?"You are in charge: give each phone its role in Settings.":ctlNameOf(S.ctl.master)+" is in charge and gives out the roles.")});
+  else if(!S.practice && !ctlOn() && S.role==="spectator") b.push({text:"Spectator: this phone is not counted in any gap."});
+  if(!S.practice && ctlOn() && !amMaster() && now-S.ctlHeard>CTL_LAPSE_MS) b.push({text:ctlNameOf(S.ctl.master)+" (in charge) not heard for "+fmtAge(now-S.ctlHeard)+". Roles stay as they were. Anyone can take charge with New trip in Settings."});
+  Object.keys(S.sameVeh).forEach(function(n){ var sv=S.sameVeh[n]; if(sv.flag) b.push({text:"Radio unit "+unitShort(n)+" seems to be in this vehicle, but it is set as the "+nm(sv.role)+". It is not used for gaps. Check which unit is in which vehicle."}); });
+  if(S.appTooOldForUnit && radioAvail() && typeof NATIVE.radioUse!=="function") b.push({text:"The phone in charge gave this vehicle radio unit "+S.appTooOldForUnit+". Update the app so it can switch to it."});
   if(S.saverWarn && !S.practice) b.push({text:S.saverWarn});
   if(appOutdated()) b.push({text:"Update the app to "+APP_LATEST+" (this phone has "+appVer()+"). When stopped: tap End trip, then Download app update on the start screen."});
   else if(S.newVersion) b.push({text:"New version "+S.newVersion.split(" ")[0]+" is on the website. Update when stopped: the page restarts and you tap Start again.",update:true});
@@ -1126,13 +1170,14 @@ function radioTag(){ return (S.topicId||"").slice(0,8); }   // the trip, without
 function manualRoles(){ try{ var m=JSON.parse(store.get("radioRoles","{}")); return (m && typeof m==="object") ? m : {}; }catch(e){ return {}; } }
 function setManualRole(node,role){ var m=manualRoles(); if(role) m[node]=role; else delete m[node]; store.set("radioRoles",JSON.stringify(m)); L("radio","unit "+node+" set by hand to "+(role?nm(role):"not used")); }
 function radioRoleOf(node,now){
+  if(ctlOn()){ var cu=(S.ctl.units||{})[unitShort(node)]; return isRole(cu) ? {role:cu, from:"master"} : null; }   // 1.9.0: the phone in charge says which unit is in which vehicle
   var a=S.radioMap[node];
   if(a && now-a.t<10*60000) return {role:a.role, from:"phone"};
   var m=manualRoles()[node];
   return (m && ROLES.indexOf(m)>=0) ? {role:m, from:"hand"} : null;
 }
 function radioAnnounce(now){
-  if(!radioAvail() || S.radio.state!=="connected" || !radioTag() || now-S.lastAnn<RADIO_ANNOUNCE_MS) return;
+  if(!radioAvail() || !isRole(S.role) || S.radio.state!=="connected" || !radioTag() || now-S.lastAnn<RADIO_ANNOUNCE_MS) return;
   S.lastAnn=now;
   try{ if(NATIVE.radioSend("PG1 "+radioTag()+" "+S.role+" "+phoneId)) L("radio","told the other units: this unit is "+nm(S.role)); }catch(e){}
 }
@@ -1149,6 +1194,7 @@ function onRadioText(node, info, now){
   var m=/^PG1 ([0-9a-f]{8}) (lead|truck|truck2|rear) ([a-z0-9]{1,12})$/.exec(String(info.text||""));
   if(!m) return;
   if(m[1]!==radioTag()){ L("radio","unit "+node+" is on another trip ("+m[2]+")"); return; }
+  if(m[3]===phoneId){ if(!S.ownAnnLogged){ S.ownAnnLogged=1; L("radio","this phone's own announcement heard back through unit "+node+": ignored"); } return; }   // 5b (bench 31 Oct)
   var prev=S.radioMap[node];
   S.radioMap[node]={role:m[2], pid:m[3], t:now};
   if(!prev || prev.role!==m[2]) L("radio","unit "+node+" is "+nm(m[2])+" (its phone says)");
@@ -1163,8 +1209,9 @@ function onRadioPos(node, info, now){
   var rr=radioRoleOf(node,now);
   if(!rr){ L("radio","heard "+line+" (not assigned)"); return; }
   var role=rr.role;
-  L("radio",nm(role)+" "+line+(rr.from==="hand"?" (set by hand)":""));
+  L("radio",nm(role)+" "+line+(rr.from==="hand"?" (set by hand)":rr.from==="master"?" (set by the phone in charge)":""));
   if(role===S.role) return;
+  if(sameVehicle(node,role,info,d,now)){ if(S.rad[role] && S.radOwner[role] && S.radOwner[role].node===node){ delete S.rad[role]; refreshPeer(role); } return; }   // 5c
   if(rr.from==="phone" && S.ended[role]) return;
   // C1 for radio: one unit per role
   var ro=S.radOwner[role];
@@ -1184,13 +1231,17 @@ function onRadioPos(node, info, now){
 }
 function renderRadioPanel(now){
   var show=radioAvail() && !S.practice; $("radioField").hidden=!show; if(!show) return;
-  $("radioState").textContent = !S.radio.unit ? "No unit chosen. The radio keeps gaps going where there is no mobile signal." :
-    S.radio.unit+": "+radioStateText(S.radio.state);
+  var held=heldBy(unitShort(S.radio.unit), now);
+  $("radioState").textContent = !isRole(S.role) ? "A spectator does not use a radio unit." :
+    !S.radio.unit ? (ctlOn() ? "The phone in charge has not given this vehicle a radio unit." : "No unit chosen. The radio keeps gaps going where there is no mobile signal.") :
+    S.radio.unit+": "+(held && String(S.radio.state).indexOf("connected")!==0 ? "connected to "+held+"'s phone" : radioStateText(S.radio.state));
+  $("radioPickRow").hidden=ctlOn();
+  $("radioUnitsNote").textContent = ctlOn() ? "Which vehicle each unit is in is set by the phone in charge." : "A unit with no phone beside it (or an iPhone): choose which vehicle it is in.";
   renderRadioPanelRest(now);
 }
 function radioStateText(st){
   var p=String(st||"").split(":"), base=p[0], why=p.slice(1).join(":");
-  return ({connected:"connected",connecting:"connecting…",pairing:"pairing: enter the unit's PIN when Android asks",pairfailed:"pairing failed. Asks again in a minute.",searching:"looking for the unit…",notfound:"unit not found nearby. Is it switched on? Trying again.",repair:"the unit no longer accepts this phone's pairing: in Android Bluetooth settings, forget the unit; Pilot Gap then pairs again",off:"off",nopermission:"Bluetooth not allowed for Pilot Gap",nobluetooth:"Bluetooth is off"}[base]||base||"off")+(why?" ("+why+")":"");
+  return ({connected:"connected",connecting:"connecting…",pairing:"pairing: enter the unit's PIN when Android asks",pairfailed:"pairing failed. Asks again in a minute.",searching:"looking for the unit…",notfound:"unit not found: switched off, out of reach, or connected to another phone. Trying again.",repair:"the unit no longer accepts this phone's pairing: in Android Bluetooth settings, forget the unit; Pilot Gap then pairs again",off:"off",nopermission:"Bluetooth not allowed for Pilot Gap",nobluetooth:"Bluetooth is off"}[base]||base||"off")+(why?" ("+why+")":"");
 }
 function renderRadioPanelRest(now){
   var nodes=Object.keys(S.radioNodes).filter(function(n){ return n!==S.radio.node; }).sort();
@@ -1204,7 +1255,8 @@ function renderRadioPanelRest(now){
       nodes.forEach(function(n){
         var r=radioRoleOf(n,now), row=document.createElement("div"); row.className="row";
         var lab=document.createElement("span"); lab.textContent=n+" "; row.appendChild(lab);
-        if(r && r.from==="phone"){ var t=document.createElement("span"); t.className="note"; t.textContent=nm(r.role)+" (its phone says)"; row.appendChild(t); }
+        if(r && (r.from==="phone" || r.from==="master")){ var t=document.createElement("span"); t.className="note"; t.textContent=nm(r.role)+(r.from==="master"?" (set by the phone in charge)":" (its phone says)"); row.appendChild(t); }
+        else if(ctlOn()){ var t2=document.createElement("span"); t2.className="note"; t2.textContent="not used"; row.appendChild(t2); }
         else {
           var sel=document.createElement("select"); sel.setAttribute("aria-label","Vehicle for radio unit "+n);
           [["","Not used"]].concat(ROLES.map(function(x){ return [x,NAME[x]]; })).forEach(function(o){ var op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; sel.appendChild(op); });
@@ -1218,6 +1270,233 @@ function renderRadioPanelRest(now){
     }
   }
   nodes.forEach(function(n){ var e=$("radAge_"+n.replace(/[^a-z0-9]/gi,"")); if(e) e.textContent=" heard "+fmtAge(now-S.radioNodes[n].t)+" ago"; });
+}
+
+/* ---------- 1.9.0: the phone in charge, spectators, radio unit checks (Ryan 3g, 4, 5; 2 Nov 2026) ---------- */
+function myName(){ var a=agreement(); return a ? a.name : "?"; }
+function unitShort(s){ var m=/([0-9a-f]{4})$/i.exec(String(s||"")); return m ? m[1].toLowerCase() : ""; }
+function ctlOn(){ return !!(S.ctl && S.ctl.round); }
+function amMaster(){ return ctlOn() && S.ctl.master===phoneId; }
+function ctlPidFor(role){ if(!ctlOn()) return null; var r=S.ctl.roles||{}; for(var p in r){ if(r.hasOwnProperty(p) && r[p]===role) return p; } return null; }
+function ctlNameOf(pid){ if(pid===phoneId) return myName(); var p=S.presence[pid]; return (p && p.name) || (S.ctl && S.ctl.names && S.ctl.names[pid]) || pid; }
+function heldBy(u, now){   // 5d: another phone says it is connected to this unit
+  if(!u) return "";
+  for(var pid in S.presence){ var p=S.presence[pid]; if(S.presence.hasOwnProperty(pid) && p.unit===u && p.link==="connected" && now-p.at<60000) return p.name||pid; }
+  return "";
+}
+function validCtl(d){
+  if(!d || typeof d.round!=="number" || typeof d.master!=="string" || typeof d.t!=="number" || !d.roles || typeof d.roles!=="object") return false;
+  for(var p in d.roles){ if(d.roles.hasOwnProperty(p) && !isRole(d.roles[p]) && d.roles[p]!=="spectator") return false; }
+  return true;
+}
+function saveCtl(){ try{ localStorage.setItem("pg_ctl",JSON.stringify({trip:S.trip, ctl:S.ctl, heard:S.ctlHeard})); }catch(e){} }
+function loadCtl(){   // after an automatic restart, keep the last assignment until the phone in charge is heard again
+  try{ var x=JSON.parse(localStorage.getItem("pg_ctl")||"null"); if(x && x.trip===S.trip && validCtl(x.ctl) && Date.now()-x.heard<RESUME_MS) return x; }catch(e){}
+  return null;
+}
+function publishCtl(asOld){
+  if(!S.client || !S.connected || !ctlOn() || (!amMaster() && !asOld)) return;
+  var now=Date.now(); S.lastCtl=now; S.ctl.t=now; S.ctlHeard=now; saveCtl();
+  var msg={v:1, pid:phoneId, round:S.ctl.round, master:S.ctl.master, roles:S.ctl.roles, units:S.ctl.units||{}, names:S.ctl.names||{}, removed:S.ctl.removed||[], t:now};
+  var c=S.client, tp=topic("ctl");
+  seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:true}); S.lastSend=Date.now(); } });
+}
+function handleCtl(d, stored){
+  var now=Date.now();
+  if(!validCtl(d)) { L("ctl","bad message from the phone in charge ignored"); return; }
+  if(stored && now-d.t>STORED_MAX_MS){ if(!S.oldCtlLogged){ S.oldCtlLogged=1; L("ctl","ignored old stored trip control from "+stamp(d.t)); } return; }
+  if(ctlOn()){
+    if(d.round<S.ctl.round) return;                                   // an older "New trip"
+    if(d.round===S.ctl.round && d.t<=S.ctl.t && !(d.master!==S.ctl.master)) { S.ctlHeard=Math.max(S.ctlHeard,now); return; }
+    if(amMaster() && d.pid===phoneId) return;                         // our own message back
+  }
+  var was=S.ctl, wasMaster=amMaster();
+  S.ctl={round:d.round, master:d.master, roles:d.roles, units:(d.units&&typeof d.units==="object")?d.units:{}, names:(d.names&&typeof d.names==="object")?d.names:{}, removed:Array.isArray(d.removed)?d.removed:[], t:d.t};
+  S.ctlHeard=now; saveCtl();
+  if(!was || was.round!==d.round) L("ctl","new trip started by "+(d.names&&d.names[d.master]||d.master)+": roles now set by that phone");
+  if(wasMaster && !amMaster()) L("ctl", d.round>was.round ? "another phone pressed New trip: it is in charge now" : "handed over: "+ctlNameOf(d.master)+" is in charge now");
+  if(!wasMaster && amMaster()){ L("ctl","this phone is now in charge"); say("ctl","This phone is now in charge of the trip",0); S.lastCtl=0; }
+  applyCtl(was);
+}
+function applyCtl(was){
+  var mine=(S.ctl.roles||{})[phoneId] || "spectator", removed=(S.ctl.removed||[]).indexOf(phoneId)>=0;
+  if(removed) mine="spectator";
+  if(removed!==!!S.removed){ S.removed=removed; L("ctl", removed ? "removed from this trip by the phone in charge" : "brought back into the trip"); }
+  // drop positions from phones that no longer hold a role
+  ROLES.forEach(function(r){ var o=S.owner[r], ap=ctlPidFor(r); if(o && o.id!==ap){ delete S.mob[r]; delete S.owner[r]; refreshPeer(r); } });
+  if(was && JSON.stringify(was.units||{})!==JSON.stringify(S.ctl.units||{})){ S.rad={}; S.radOwner={}; ROLES.forEach(refreshPeer); L("ctl","radio units: "+unitsText()); }
+  applyRole(mine, "set by "+ctlNameOf(S.ctl.master));
+  applyUnit();
+}
+function unitsText(){ var u=S.ctl.units||{}, k=Object.keys(u); return k.length ? k.map(function(x){ return x+" "+nm(u[x]); }).join(", ") : "none set"; }
+/* Change this phone's role during a trip (given by the phone in charge). */
+function applyRole(nr, why){
+  if(nr===S.role || (!isRole(nr) && nr!=="spectator")) return;
+  var old=S.role, now=Date.now();
+  if(isRole(old) && S.client && S.connected){ try{ S.client.publish(topic(old),"",{qos:0,retain:true}); }catch(e){} }   // no longer this vehicle
+  delete S.peers[old];
+  S.role=nr; store.set("role",nr);
+  delete S.mob[nr]; delete S.rad[nr]; delete S.owner[nr]; delete S.src[nr];
+  var f=S.lastFix; if(f) S.peers[nr]={lat:f.lat,lon:f.lon,spd:f.spd,hdg:f.hdg,acc:f.acc,t:f.time};
+  if(nr==="truck"){ S.cfgFrom="self"; S.cfgT=now; fillRanges("l_",S.cfg); }
+  else if(old==="truck"){ S.cfgFrom="truck1"; }                    // keep the gaps in use until the new Truck 1 sends its own
+  try{ if(NATIVE && typeof NATIVE.relayOwnTopic==="function") NATIVE.relayOwnTopic(topic(isRole(nr)?nr:"p-"+phoneId)); }catch(e){}
+  S.layoutKey=""; S.alarmed={}; S.wasStale={}; S.lastGapState={}; S.everLive={}; S.lastAnn=0; S.lastPres=0;
+  if(!S.practice) markRunning();
+  L("role","now "+nm(nr)+(why?" ("+why+")":""));
+  say("role_"+nr, nr==="spectator" ? "This phone is now a spectator" : "This phone is now "+nm(nr).toLowerCase(), 0);
+  publishMine(true); publishCfg();
+}
+/* Phones take their radio unit from the phone in charge (needs app 1.4.0). */
+function applyUnit(){
+  if(!radioAvail() || S.practice || !ctlOn()) return;
+  var u="", units=S.ctl.units||{};
+  if(isRole(S.role)) for(var k in units){ if(units.hasOwnProperty(k) && units[k]===S.role) u=k; }
+  if(u===S.unitAsked) return;
+  S.unitAsked=u;
+  if(!u){ L("radio","no radio unit for this vehicle (set by the phone in charge)"); try{ NATIVE.radioStop(); }catch(e){} S.radio.unit=""; return; }
+  if(typeof NATIVE.radioUse!=="function"){ L("radio","the phone in charge gave this vehicle unit "+u+"; this app is too old to switch by itself"); S.appTooOldForUnit=u; return; }
+  L("radio","radio unit "+u+" (set by the phone in charge)");
+  try{ NATIVE.radioUse("Meshtastic_"+u); }catch(e){ L("error","app radioUse: "+e.message); }
+}
+function publishPresence(now){
+  if(!S.client || !S.connected || S.practice || !S.topicId || now-(S.lastPres||0)<PRES_MS) return;
+  S.lastPres=now;
+  var f=S.lastFix, msg={pid:phoneId, name:myName(), role:S.role, unit:unitShort(S.radio.unit), link:String(S.radio.state||"").split(":")[0],
+    ver:VERSION.split(" ")[0], app:NATIVE?appVer():"", round:ctlOn()?S.ctl.round:0, t:now};
+  if(f && now-f.time<30000){ msg.lat=+f.lat.toFixed(5); msg.lon=+f.lon.toFixed(5); }
+  var c=S.client, tp=topic("p-"+phoneId);
+  seal(msg).then(function(x){ if(c===S.client && S.connected){ c.publish(tp,x,{qos:0,retain:false}); S.lastSend=Date.now(); } });
+}
+function handlePresence(d, stored){
+  if(stored || !d || typeof d.pid!=="string" || !/^[a-z0-9]{1,12}$/.test(d.pid) || d.pid===phoneId) return;
+  var now=Date.now(), p=S.presence[d.pid];
+  var role=(isRole(d.role)||d.role==="spectator") ? d.role : "";
+  if(!p || p.role!==role || p.unit!==(d.unit||"")) L("phone","phone "+d.pid+" ("+String(d.name||"?").slice(0,40)+"): "+(role?nm(role):"no role")+(d.unit?", radio unit "+d.unit+" "+(d.link||""):"")+", version "+(d.ver||"?"));
+  S.presence[d.pid]={name:String(d.name||"").slice(0,40), role:role, unit:/^[0-9a-f]{4}$/.test(d.unit||"")?d.unit:"", link:String(d.link||""),
+    ver:String(d.ver||""), lat:typeof d.lat==="number"?d.lat:null, lon:typeof d.lon==="number"?d.lon:null, at:now};
+}
+/* 5c (road test 1 Nov 15:30-16:03): a unit set as another vehicle but riding in this one gave "Front gap too close, 13 metres".
+   Very strong signal while moving for a minute = it is in this vehicle: not used for gaps until that stops for a minute. */
+function sameVehicle(node, role, info, d, now){
+  var f=S.lastFix, moving=f && f.spd!=null && f.spd>=SAMEVEH_SPD && now-f.time<10000;
+  var near=moving && info.rssi!=null && info.rssi>=SAMEVEH_RSSI && (d==null || d<=300);
+  var s=S.sameVeh[node]||(S.sameVeh[node]={since:0,last:0,flag:false,role:role});
+  s.role=role;
+  if(near){
+    if(!s.since) s.since=now; s.last=now;
+    if(!s.flag && now-s.since>=SAMEVEH_MS){ s.flag=true; L("radio","unit "+node+" looks like it is in this vehicle (signal "+info.rssi+" dBm while moving for 1 min), not the "+nm(role)+": not used for gaps"); say("same_"+node,"Radio unit "+unitShort(node)+" looks like it is in this vehicle. Check which unit is in which vehicle.",0); }
+  } else if(moving || !s.flag){
+    s.since=0;
+    if(s.flag && now-s.last>=SAMEVEH_MS){ s.flag=false; L("radio","unit "+node+" no longer looks like it is in this vehicle"); }
+  }
+  return s.flag;
+}
+function renderCtlPanel(now){
+  var show=!S.practice; $("ctlField").hidden=!show; if(!show) return;
+  var m=amMaster();
+  $("ctlState").textContent = !ctlOn() ? "No phone is in charge. Pressing New trip makes this phone the one in charge: every other phone becomes a spectator until you give it a role." :
+    (m ? "This phone is in charge. Give each phone its role, and each radio unit its vehicle." : "In charge: "+ctlNameOf(S.ctl.master)+". This phone: "+nm(S.role)+(S.removed?" (removed from the trip)":"")+".") +
+    (!m && now-S.ctlHeard>CTL_LAPSE_MS ? " Not heard from for "+fmtAge(now-S.ctlHeard)+": anyone can press New trip to take charge." : "");
+  var nb=$("ctlNew"); if(!S.ctlArm || now-S.ctlArm>5000){ S.ctlArm=0; nb.textContent = m ? "New trip again (resets every role)" : "New trip: I'm in charge"; }
+  // phones: this one, every phone heard in the last 5 min, and every phone given a role
+  var pids=[phoneId], seen={}; seen[phoneId]=1;
+  Object.keys(S.presence).forEach(function(p){ if(now-S.presence[p].at<PRES_SHOW_MS && !seen[p]){ seen[p]=1; pids.push(p); } });
+  if(ctlOn()) Object.keys(S.ctl.roles||{}).forEach(function(p){ if(!seen[p]){ seen[p]=1; pids.push(p); } });
+  var rows=pids.map(function(p){
+    var me=p===phoneId, pr=S.presence[p]||{}, role= ctlOn() ? ((S.ctl.roles||{})[p]||"spectator") : (me?S.role:pr.role||"");
+    var removed=ctlOn() && (S.ctl.removed||[]).indexOf(p)>=0, age= me?0:(pr.at?now-pr.at:null);
+    var dm = (!me && pr.lat!=null && S.lastFix) ? dist(S.lastFix,{lat:pr.lat,lon:pr.lon}) : null;
+    return {pid:p, me:me, name:ctlNameOf(p), role:role, removed:removed, unit:me?unitShort(S.radio.unit):pr.unit, link:me?String(S.radio.state||"").split(":")[0]:pr.link, age:age, dm:dm, ver:me?VERSION.split(" ")[0]:pr.ver};
+  });
+  var key=JSON.stringify([m, ctlOn()?[S.ctl.round,S.ctl.roles,S.ctl.removed,S.ctl.master]:0, rows.map(function(r){ return [r.pid,r.name,r.role,r.removed,r.unit,r.link,r.ver]; })]);
+  var host=$("ctlPhones");
+  if(host.dataset.key!==key){
+    host.dataset.key=key; host.innerHTML="";
+    rows.forEach(function(r){
+      var d=document.createElement("div"); d.className="ctlrow";
+      var lab=document.createElement("span"); lab.textContent=r.name+(r.me?" (this phone)":"")+(ctlOn()&&S.ctl.master===r.pid?" · in charge":""); d.appendChild(lab);
+      if(m && !r.removed){
+        var sel=document.createElement("select"); sel.setAttribute("aria-label","Role for "+r.name);
+        ROLES.concat(["spectator"]).forEach(function(x){ var o=document.createElement("option"); o.value=x; o.textContent=NAME[x]; sel.appendChild(o); });
+        sel.value=r.role||"spectator"; sel.onchange=function(){ ctlSetRole(r.pid, sel.value); }; d.appendChild(sel);
+      } else { var t=document.createElement("span"); t.className="note"; t.textContent=r.removed?"removed":(r.role?NAME[r.role]:"–"); d.appendChild(t); }
+      var info=document.createElement("span"); info.className="note"; info.id="ctlInfo_"+r.pid; d.appendChild(info);
+      if(m && !r.me){ var b=document.createElement("button"); b.type="button"; b.textContent=r.removed?"Bring back":"Remove"; b.onclick=function(){ ctlRemove(r.pid, !r.removed); }; var rw=document.createElement("div"); rw.className="row"; rw.appendChild(b); d.appendChild(rw); }
+      host.appendChild(d);
+    });
+  }
+  rows.forEach(function(r){ var e=$("ctlInfo_"+r.pid); if(!e) return;
+    var bits=[]; if(!r.me) bits.push(r.age==null?"not heard yet":"heard "+fmtAge(r.age)+" ago"); if(r.dm!=null) bits.push(fmtMplain(r.dm)+" away");
+    if(r.unit) bits.push("radio "+r.unit+(r.link==="connected"?" connected":r.link?" "+r.link:"")); if(r.ver) bits.push("version "+r.ver);
+    e.textContent=bits.join(", "); });
+  // radio units: which vehicle each is in (set by the phone in charge)
+  var units={}; Object.keys(S.radioNodes).forEach(function(n){ var u=unitShort(n); if(u) units[u]=1; });
+  rows.forEach(function(r){ if(r.unit) units[r.unit]=1; }); if(ctlOn()) Object.keys(S.ctl.units||{}).forEach(function(u){ units[u]=1; });
+  var ul=Object.keys(units).sort();
+  $("ctlUnitsBox").hidden=!(m && radioAvail()) && !(ctlOn() && Object.keys(S.ctl.units||{}).length);
+  var ukey=JSON.stringify([m,ul,ctlOn()?S.ctl.units:0]), uh=$("ctlUnits");
+  if(uh.dataset.key!==ukey){
+    uh.dataset.key=ukey; uh.innerHTML= ul.length ? "" : '<span class="note">No radio units heard yet.</span>';
+    ul.forEach(function(u){
+      var d=document.createElement("div"); d.className="ctlrow";
+      var lab=document.createElement("span"); lab.textContent="Unit "+u; d.appendChild(lab);
+      var cur=ctlOn()?(S.ctl.units||{})[u]||"":"";
+      if(m){ var sel=document.createElement("select"); sel.setAttribute("aria-label","Vehicle for radio unit "+u);
+        [["","Not used"]].concat(ROLES.map(function(x){ return [x,NAME[x]]; })).forEach(function(o){ var op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; sel.appendChild(op); });
+        sel.value=cur; sel.onchange=function(){ ctlSetUnit(u, sel.value); }; d.appendChild(sel); }
+      else { var t=document.createElement("span"); t.className="note"; t.textContent=cur?NAME[cur]:"not used"; d.appendChild(t); }
+      uh.appendChild(d);
+    });
+  }
+  // hand over
+  var others=rows.filter(function(r){ return !r.me && !r.removed && r.age!=null && r.age<60000; });
+  $("ctlHandRow").hidden=!(m && others.length);
+  var hkey=others.map(function(r){ return r.pid+r.name; }).join(","), hs=$("ctlHandTo");
+  if(hs.dataset.key!==hkey){ hs.dataset.key=hkey; hs.innerHTML=""; others.forEach(function(r){ var o=document.createElement("option"); o.value=r.pid; o.textContent=r.name; hs.appendChild(o); }); }
+}
+function ctlNewTrip(){
+  var now=Date.now();
+  if(!S.ctlArm || now-S.ctlArm>5000){ S.ctlArm=now; $("ctlNew").textContent="Tap again to confirm: every other phone becomes a spectator"; return; }
+  S.ctlArm=0;
+  var roles={}, names={}, units={}, u=unitShort(S.radio.unit);
+  roles[phoneId]= isRole(S.role) ? S.role : "spectator"; names[phoneId]=myName();
+  if(u && isRole(S.role)) units[u]=S.role;
+  var was=S.ctl;
+  S.ctl={round:now, master:phoneId, roles:roles, units:units, names:names, removed:[], t:now}; S.ctlHeard=now; S.unitAsked=u;
+  L("ctl","New trip pressed: this phone is in charge; every other phone is a spectator until given a role");
+  say("ctl","You are in charge. Every other phone is a spectator until you give it a role",0);
+  applyCtl(was); publishCtl(); saveCtl(); render();
+}
+function ctlSetRole(pid, role){
+  if(!amMaster()) return;
+  var r=S.ctl.roles;
+  if(isRole(role)) Object.keys(r).forEach(function(p){ if(r[p]===role && p!==pid){ r[p]="spectator"; L("ctl",ctlNameOf(p)+" is now a spectator (role given to another phone)"); } });   // one phone per role
+  r[pid]=role; S.ctl.names[pid]=ctlNameOf(pid);
+  L("ctl",ctlNameOf(pid)+" ("+pid+") set to "+NAME[role]);
+  applyCtl(null); publishCtl(); render();
+}
+function ctlSetUnit(u, role){
+  if(!amMaster()) return;
+  var was={units:JSON.parse(JSON.stringify(S.ctl.units||{}))}, us=S.ctl.units=S.ctl.units||{};
+  if(isRole(role)) Object.keys(us).forEach(function(k){ if(us[k]===role && k!==u) delete us[k]; });   // one unit per vehicle
+  if(isRole(role)) us[u]=role; else delete us[u];
+  L("ctl","radio unit "+u+" set to "+(role?NAME[role]:"not used"));
+  applyCtl(was); publishCtl(); render();
+}
+function ctlRemove(pid, remove){
+  if(!amMaster() || pid===phoneId) return;
+  var rm=S.ctl.removed=(S.ctl.removed||[]).filter(function(p){ return p!==pid; });
+  if(remove){ rm.push(pid); S.ctl.roles[pid]="spectator"; }
+  S.ctl.names[pid]=ctlNameOf(pid);
+  L("ctl",ctlNameOf(pid)+" ("+pid+") "+(remove?"removed from the trip":"brought back as a spectator"));
+  applyCtl(null); publishCtl(); render();
+}
+function ctlHandOver(){
+  var pid=$("ctlHandTo").value; if(!amMaster() || !pid) return;
+  S.ctl.master=pid; S.ctl.names[pid]=ctlNameOf(pid);
+  L("ctl","handed over: "+ctlNameOf(pid)+" ("+pid+") is now in charge");
+  publishCtl(true); saveCtl(); render();
 }
 
 /* ---------- range inputs (pre = "s_" setup screen, "l_" live settings) ---------- */
@@ -1322,7 +1601,11 @@ function start(){
   if(NATIVE) L("start","running in the Android app "+NATIVE.appVersion()+" (keeps going behind other apps)");
   L("start","screen: keep on "+(S.keepOn?"on":"off")+", force "+(S.force?"on":"off")+" | "+navigator.userAgent);
   if(!S.practice && NATIVE){ try{ NATIVE.tripStart(S.role); }catch(e){ L("error","app tripStart: "+e.message); } }
-  if(!S.practice && radioAvail()){ try{ NATIVE.radioStart(); }catch(e){ L("error","app radioStart: "+e.message); } }
+  S.presence={}; S.sameVeh={}; S.ignoredLog={}; S.unitAsked=undefined; S.removed=false; S.ownAnnLogged=0; S.oldCtlLogged=0; S.appTooOldForUnit=""; S.lastPres=0; S.lastCtl=0; S.ctlArm=0;
+  var oc = S.practice ? null : loadCtl(); S.ctl = oc ? oc.ctl : null; S.ctlHeard = oc ? oc.heard : 0;
+  if(oc) L("ctl","restored the last trip control ("+ctlNameOf(S.ctl.master)+" in charge) until it is heard again");
+  if(!S.practice && radioAvail() && isRole(S.role)){ try{ NATIVE.radioStart(); }catch(e){ L("error","app radioStart: "+e.message); } }
+  if(oc) applyCtl(null);
   if(S.practice){ S.simT0=Date.now(); }
   else {
     startGps();
@@ -1345,7 +1628,7 @@ function teardown(clearMine){
   S.timers.forEach(clearInterval); S.timers=[];
   if(S.client){
     var c=S.client; S.client=null;
-    try{ if(clearMine && S.connected) c.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){}   // before tripEnd, while the relay is surely running
+    try{ if(clearMine && S.connected && isRole(S.role)) c.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){}   // before tripEnd, while the relay is surely running
     setTimeout(function(){ try{ c.end(true); }catch(e){} },300);
   }
   if(radioAvail()){ try{ NATIVE.radioStop(); }catch(e){} }
@@ -1399,6 +1682,8 @@ window.addEventListener("online",function(){ if(!$("run").hidden) L("net","phone
 $("saveLog").addEventListener("click",function(){ L("log","saved during trip"); saveLogLocal(); saveLogFile(S.log); });
 $("saveLastLog").addEventListener("click",function(){ saveLogFile(loadLog()); });
 $("changeRole").addEventListener("click",goSetup);
+$("ctlNew").addEventListener("click",ctlNewTrip);
+$("ctlHand").addEventListener("click",ctlHandOver);
 $("radioPick").addEventListener("click",function(){ if(radioAvail()){ L("radio","choosing a unit"); try{ NATIVE.radioPick(); }catch(e){ L("error","app radioPick: "+e.message); } } });
 $("keepOn2").addEventListener("change",function(){ setScreen($("keepOn2").checked,S.force); });
 $("forceOn2").addEventListener("change",function(){ setScreen(S.keepOn,$("forceOn2").checked); });
@@ -1423,7 +1708,7 @@ document.addEventListener("visibilitychange",function(){
   else { L("phone","going to background | "+relayDiag(Date.now())); L("phone", NATIVE ? "app in the background (tracking and alarms continue)" : "switched away from this page (another app, call or screen locked)"); saveLogLocal(); }
 });
 window.addEventListener("pagehide",function(){ if(!$("run").hidden){ L("phone","page closing"); saveLogLocal();
-  try{ if(S.client && !S.client.app && S.connected && !S.practice) S.client.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){} } });   // browser closed: tell the others (Ryan, 20 Oct)
+  try{ if(S.client && !S.client.app && S.connected && !S.practice && isRole(S.role)) S.client.publish(topic(S.role),"",{qos:0,retain:true}); }catch(e){} } });   // browser closed: tell the others (Ryan, 20 Oct)
 
 var q=new URLSearchParams(location.search);
 var DEFAULT_CODE = "234567";   // default for testing (Ryan, 19 Oct 03:11; was 123456); New code for privacy
@@ -1443,7 +1728,7 @@ $("updateNow").addEventListener("click",doUpdate);
 checkUpdate(); setInterval(checkUpdate,UPDATE_CHECK_MS);
 setInterval(function(){ if($("run").hidden){ if(store.get("uppending","")==="1") uploadLog("retry"); else sendUnsent(); } },120000);   // on the start screen, keep trying to send waiting logs
 
-window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,saveLogLocal:saveLogLocal,rollLog:rollLog,logName:logName,twoTrucks:twoTrucks,refreshPeer:refreshPeer,radioTag:radioTag,phoneId:phoneId};
+window.__pg={native:function(){ return !!NATIVE; },uploadLog:uploadLog,agreement:agreement,setUploadUrl:function(u){ UPLOAD_URL=u; },checkUpdate:checkUpdate,verNum:verNum,gapInfo:gapInfo,dist:dist,S:S,onRelayMessage:onRelayMessage,handleMsg:handleMsg,seal:seal,unseal:unseal,deriveTrip:deriveTrip,logText:logText,unsent:unsent,sendUnsent:sendUnsent,periodic:periodic,saveLogLocal:saveLogLocal,rollLog:rollLog,logName:logName,twoTrucks:twoTrucks,refreshPeer:refreshPeer,radioTag:radioTag,phoneId:phoneId,handleCtl:handleCtl,handlePresence:handlePresence,ctlNewTrip:ctlNewTrip,ctlSetRole:ctlSetRole,ctlSetUnit:ctlSetUnit,ctlRemove:ctlRemove,ctlHandOver:ctlHandOver,applyRole:applyRole,radioRoleOf:radioRoleOf,ctlOn:ctlOn,amMaster:amMaster,render:render};
 })();
 </script>
 </body>

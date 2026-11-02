@@ -2,6 +2,22 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
+## 1.9.0 — 2 Nov 2026 (page) and Android app 1.4.0 — NOT RELEASED (built, waiting for Ryan's OK)
+
+Ryan, 2 Nov: "3g", "yes" to 4 and 5 (19:15). Ryan, 19:17: he said yes without reading the plan, and asked for that to be noted, "that way if there is issues we know why".
+From the road test 1-2 Nov (standard antennas): a phone 213 km away counted as the lead; a unit riding in the truck was set as Lead and gave "Front gap too close, 13 metres"; one phone held a unit another phone was set to use, so that phone searched all trip; a stuck connect never retried.
+- **One phone in charge (3g).** Settings > "Who is in charge of this trip" > New trip (tap twice). That phone is in charge; every other phone becomes a Spectator until it is given a role. The link stays the same. The phone in charge re-sends who-is-what every 10 s (stored on the relay, scrambled). An older New trip, or a stored one from an old trip, is ignored.
+- **What the phone in charge can do (4).** See every phone (name, role, distance, radio unit, version); give each one its role (one phone per role); set which radio unit is in which vehicle (one unit per vehicle); remove a phone (it is told to end the trip); hand over to another phone.
+- **While a phone is in charge** a vehicle's position is used only from the phone given that role; a unit's vehicle comes only from the phone in charge (phone claims and hand settings are not used); phones switch to the unit given to their vehicle by themselves (app 1.4.0); "Choose radio unit" is hidden. If the phone in charge is not heard for 10 min, every phone says so and keeps the last roles; anyone can press New trip.
+- **Spectator role.** Also on the start screen. A spectator sees the gaps, sends no position, raises no alarms and does not use a radio unit.
+- **Every phone says who it is every 10 s** (name, role, radio unit and link, version, position), not stored on the relay. Old phones (1.8.x) do not, and while a phone is in charge they are ignored: update every phone.
+- **5a (app 1.4.0):** a radio connect with no answer in 30 s is given up and the unit found again by a fresh scan; after any lost link the unit is found again by a scan.
+- **5b:** this phone's own role announcement heard back through another unit is ignored.
+- **5c:** a unit set as another vehicle that is very loud (-20 dBm or louder) while this vehicle is moving (18 km/h or more) for a minute is flagged "seems to be in this vehicle", spoken once, and not used for gaps until it has been quiet for a minute while moving.
+- **5d:** "unit not found" now says it may be connected to another phone, and names the phone when that phone says it has the unit.
+- With no phone in charge, everything works as in 1.8.2.
+- Smoke test 174 checks (39 new); `tests/meshproto/check.sh` passes. Not tested on a phone.
+
 ## 1.8.2 — 31 Oct 2026 (page: radio messages only) and Android app 1.3.2
 
 Ryan, 20:42: "2b".

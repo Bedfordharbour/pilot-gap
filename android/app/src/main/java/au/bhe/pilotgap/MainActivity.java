@@ -233,7 +233,7 @@ public class MainActivity extends Activity {
     void startRadio() {
         stopRadio();
         String addr = savedAddress(), unit = savedUnit();
-        if (addr.isEmpty()) { radioState("", ""); return; }
+        if (addr.isEmpty() && unit.isEmpty()) { radioState("", ""); return; }   // 1.4.0: a unit given by name only (the phone in charge) is found by a scan
         if (!radioAllowed()) { radioState("nopermission", unit); return; }
         RadioLink[] me = new RadioLink[1];
         me[0] = new RadioLink(this, addr, unit, new RadioLink.Listener() {
@@ -241,6 +241,7 @@ public class MainActivity extends Activity {
             @Override public void myNode(String n) { if (radio == me[0]) toPage("window.__pgRadio&&window.__pgRadio('mynode'," + q(n) + ")"); }
             @Override public void position(String n, String json) { if (radio == me[0]) toPage("window.__pgRadio&&window.__pgRadio('pos'," + q(n) + "," + q(json) + ")"); }
             @Override public void text(String n, String json) { if (radio == me[0]) toPage("window.__pgRadio&&window.__pgRadio('text'," + q(n) + "," + q(json) + ")"); }
+            @Override public void found(String address) { if (radio == me[0]) getSharedPreferences("pg", MODE_PRIVATE).edit().putString("radioAddr", address).apply(); }
         });
         radio = me[0];
         me[0].start();
@@ -475,6 +476,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void radioStart() { runOnUiThread(MainActivity.this::startRadio); }
         @JavascriptInterface public void radioStop() { stopRadio(); }
         @JavascriptInterface public void radioPick() { runOnUiThread(MainActivity.this::pickRadio); }
+        /** 1.4.0: use the unit the phone in charge gave this vehicle, by its Bluetooth name (e.g. Meshtastic_8cab). */
+        @JavascriptInterface public void radioUse(String name) {
+            if (name == null || !name.matches("Meshtastic_[0-9a-fA-F]{4}")) return;
+            runOnUiThread(() -> {
+                android.content.SharedPreferences sp = getSharedPreferences("pg", MODE_PRIVATE);
+                if (!name.equalsIgnoreCase(sp.getString("radioName", ""))) sp.edit().putString("radioName", name).remove("radioAddr").apply();
+                if (TripService.running) startRadio(); else radioState("", name);
+            });
+        }
         @JavascriptInterface public boolean radioSend(String text) { RadioLink r = radio; return r != null && text != null && text.length() <= 200 && r.sendText(text); }
 
         @JavascriptInterface public void reload() {

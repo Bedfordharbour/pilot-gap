@@ -42,7 +42,7 @@ const code1 = await p.inputValue('#trip');
 check('New code makes a random 6-character code', /^[A-Z0-9]{6}$/.test(code1) && code1 !== '234567', code1);
 check('version shown', /\d+\.\d+\.\d+/.test(await p.textContent('.ver')), await p.textContent('.ver'));
 check('screen options off by default', !(await p.isChecked('#keepOn')) && !(await p.isChecked('#forceOn')));
-check('four roles offered', (await p.locator('.role').count()) === 4);
+check('four roles and Spectator offered', (await p.locator('.role').count()) === 5 && await p.isVisible('[data-role=spectator]'));
 
 // Truck 1 sets the gaps; defaults front 500-2000, between trucks 0-100, rear 100-1000
 await p.click('[data-role=truck]');
@@ -447,6 +447,138 @@ check('radio: stopped at End trip', await x.evaluate(() => window.__calls.some(c
 await x.screenshot({ path: path.join(root, 'tests', 'phone-radio.png') });
 await ctxX.close();
 check('no script errors (radio)', errors.filter(e => e.startsWith('radio:')).length === 0, errors);
+
+// ---- 1.9.0: the phone in charge, spectators, radio fixes 5a-5d (Ryan 3g, 4, 5; road test 1-2 Nov) ----
+const ctxY = await b.newContext({ viewport: { width: 375, height: 812 } });
+await ctxY.addInitScript(() => {
+  window.__calls = [];
+  const rec = (n, ret) => (...a) => { window.__calls.push([n, ...a]); return ret; };
+  window.PilotGapNative = { tripStart: rec('tripStart'), tripEnd: rec('tripEnd'), say: rec('say'), stopSpeech: rec('stopSpeech'), beep: rec('beep'), beepTwice: rec('beepTwice'),
+    keepScreenOn: rec('keepScreenOn'), netInfo: () => 'mobile internet ok', vibrate: rec('vibrate'), saveLog: rec('saveLog'), reload: rec('reload'),
+    appVersion: () => '1.4.0', hasLocation: () => true,
+    relayStart: rec('relayStart', 11), relayPublish: rec('relayPublish', true), relayStop: rec('relayStop'), relayStopId: rec('relayStopId'), relayUp: () => true, relayRunning: () => true,
+    relayOwnTopic: rec('relayOwnTopic'), httpPost: rec('httpPost'),
+    radioStart: rec('radioStart'), radioStop: rec('radioStop'), radioPick: rec('radioPick'), radioSend: rec('radioSend', true), radioUse: rec('radioUse') };
+  localStorage.setItem('pg_agree', JSON.stringify({ name: 'Ryan', t: Date.now(), v: 1 }));
+});
+const y = await ctxY.newPage(); y.on('pageerror', e => errors.push('ctl: ' + e.message));
+await y.goto('http://localhost:8765/'); await y.waitForTimeout(300);
+await y.click('[data-role=truck]'); await y.click('#start');
+await y.waitForFunction(() => window.__pg.S.key !== null && window.__calls.some(c => c[0] === 'relayStart'), null, { timeout: 15000 });
+await y.evaluate(([la, lo]) => { window.__pgNativeFix(la, lo, 5, 25, 0); window.__pgRelay('connect'); window.__pgRadio('state', 'connected', 'Meshtastic_8cab'); window.__pgRadio('mynode', '!ea0f8cab'); }, [LAT0, LON0]);
+const Y = { };
+Y.msg = (role, pid, dm) => y.evaluate(async ([r, p, la, lo]) => { const t = await window.__pg.seal({ id: p + 'x', pid: p, lat: la, lon: lo, spd: 25, hdg: 0, acc: 5, t: Date.now(), s: Date.now() }); await window.__pg.onRelayMessage(r, t, false); }, [role, pid, LAT0 + dm / 111320, LON0]);
+Y.pres = (pid, name, role, unit, link) => y.evaluate(async ([p, n, r, u, l, la, lo]) => { const t = await window.__pg.seal({ pid: p, name: n, role: r, unit: u, link: l, ver: '1.9.0', lat: la, lon: lo, t: Date.now() }); await window.__pg.onRelayMessage('p-' + p, t, false); }, [pid, name, role, unit || '', link || '', LAT0 + 0.01, LON0]);
+Y.ctl = (o, stored) => y.evaluate(async ([c, st]) => { const t = await window.__pg.seal(c); await window.__pg.onRelayMessage('ctl', t, st); }, [o, !!stored]);
+Y.log = () => y.evaluate(() => window.__pg.logText(window.__pg.S.log));
+Y.rad = (node, dm, rssi) => y.evaluate(([n, la, lo, r]) => window.__pgRadio('pos', n, JSON.stringify({ lat: la, lon: lo, t: Math.floor(Date.now() / 1000), snr: 10, rssi: r })), [node, LAT0 + dm / 111320, LON0, rssi]);
+// before anyone is in charge: works as 1.8
+await Y.msg('lead', 'lawrie', 1200);
+check('1.9.0: with no phone in charge, any phone can be Lead (as before)', await y.evaluate(() => window.__pg.S.src.lead === 'mobile' && !window.__pg.ctlOn()));
+await y.evaluate(() => window.__pg.periodic(Date.now()));
+const pres = await y.evaluate(() => window.__calls.filter(c => c[0] === 'relayPublish' && /\/p-[a-z0-9]+$/.test(c[1])));
+check('1.9.0: every phone says who it is (not stored on the relay)', pres.length >= 1 && pres[0][3] === false && await y.evaluate(async t => { const d = await window.__pg.unseal(t); return d.name === 'Ryan' && d.role === 'truck' && d.unit === '8cab' && d.link === 'connected'; }, pres[0][2]), pres.map(c => [c[1], c[3]]));
+// New trip: two taps, then this phone is in charge
+await y.click('#toggleSettings'); await y.waitForTimeout(1100);
+check('1.9.0: Settings shows who is in charge (nobody yet)', /No phone is in charge/.test(await y.textContent('#ctlState')), await y.textContent('#ctlState'));
+await y.click('#ctlNew');
+check('1.9.0: New trip asks for a second tap', /Tap again to confirm/.test(await y.textContent('#ctlNew')) && !(await y.evaluate(() => window.__pg.ctlOn())));
+await y.click('#ctlNew'); await y.waitForTimeout(300);
+check('1.9.0: second tap: this phone is in charge, still Truck 1', await y.evaluate(() => window.__pg.amMaster() && window.__pg.S.role === 'truck' && window.__pg.S.ctl.units['8cab'] === 'truck'));
+const ctlPub = await y.evaluate(() => window.__calls.filter(c => c[0] === 'relayPublish' && c[1].endsWith('/ctl') && c[2]).slice(-1)[0]);
+check('1.9.0: who-is-what sent, stored on the relay, scrambled', !!ctlPub && ctlPub[3] === true && !/truck/.test(ctlPub[2]) && await y.evaluate(async t => { const d = await window.__pg.unseal(t); return d.master === window.__pg.phoneId && d.roles[window.__pg.phoneId] === 'truck'; }, ctlPub[2]));
+check('1.9.0: spoken: in charge', await y.evaluate(() => window.__calls.some(c => c[0] === 'say' && /You are in charge/.test(c[1]))));
+// the Lead phone is now a spectator until given the role
+check('1.9.0: a phone not given a role no longer counts (Lead dropped)', await y.evaluate(() => !window.__pg.S.peers.lead));
+await Y.msg('lead', 'lawrie', 1200);
+check('1.9.0: its position is ignored and logged', await y.evaluate(() => !window.__pg.S.peers.lead) && /ignored Lead pilot position from phone lawrie \(not given that role/.test(await Y.log()));
+await Y.pres('lawrie', 'Lawrie', 'lead', 'efdd', 'connected');
+await Y.pres('stale1', 'Old phone', 'lead', '', '');
+await y.waitForTimeout(1100);
+check('1.9.0: the list shows every phone with a role choice', (await y.locator('#ctlPhones select').count()) === 3 && /Lawrie/.test(await y.textContent('#ctlPhones')) && /Old phone/.test(await y.textContent('#ctlPhones')), await y.textContent('#ctlPhones'));
+await y.evaluate(() => window.__pg.ctlSetRole('lawrie', 'lead'));
+await Y.msg('lead', 'lawrie', 1200); await Y.msg('lead', 'stale1', 20); await y.waitForTimeout(1100);
+check('1.9.0: Lead from the phone given it; the other (213 km case) ignored', await y.evaluate(() => window.__pg.S.owner.lead.id === 'lawrie' && Math.abs(window.__pg.dist(window.__pg.S.peers.lead, window.__pg.S.peers.truck) - 1200) < 15));
+check('1.9.0: no "two phones" banner for an unassigned phone', !/Two phones are set as/.test(await y.textContent('#banners')), await y.textContent('#banners'));
+await y.evaluate(() => window.__pg.ctlSetRole('stale1', 'lead'));
+check('1.9.0: one phone per role: giving Lead to another makes the first a spectator', await y.evaluate(() => window.__pg.S.ctl.roles.lawrie === 'spectator' && window.__pg.S.ctl.roles.stale1 === 'lead' && !window.__pg.S.peers.lead));
+await y.evaluate(() => window.__pg.ctlSetRole('lawrie', 'lead'));
+await y.evaluate(() => window.__pg.ctlRemove('stale1', true));
+check('1.9.0: Remove takes a phone out (shown as removed)', await y.evaluate(() => window.__pg.S.ctl.removed.indexOf('stale1') >= 0 && window.__pg.S.ctl.roles.stale1 === 'spectator'));
+// radio units: set by the phone in charge
+await Y.rad('!e3caefdd', 1150, -80);
+check('1.9.0: a unit not given a vehicle is not used', await y.evaluate(() => /heard unit !e3caefdd .*\(not assigned\)/.test(window.__pg.logText(window.__pg.S.log)) && !window.__pg.S.rad.lead));
+await y.evaluate(() => window.__pg.ctlSetUnit('efdd', 'lead'));
+await Y.rad('!e3caefdd', 1150, -80);
+check('1.9.0: unit given to Lead by the phone in charge feeds Lead', await y.evaluate(() => !!window.__pg.S.rad.lead && window.__pg.radioRoleOf('!e3caefdd', Date.now()).from === 'master') && /Lead pilot unit !e3caefdd .*set by the phone in charge/.test(await Y.log()));
+await y.evaluate(() => window.__pgRadio('text', '!aaaa0001', JSON.stringify({ text: 'PG1 ' + window.__pg.radioTag() + ' rear rph1' })));
+await Y.rad('!aaaa0001', -300, -80);
+check('1.9.0: a phone\'s own claim on the radio does not override the phone in charge', await y.evaluate(() => !window.__pg.S.rad.rear));
+// 5b: this phone's own announcement heard back through another unit
+await y.evaluate(() => window.__pgRadio('text', '!e3caefdd', JSON.stringify({ text: 'PG1 ' + window.__pg.radioTag() + ' lead ' + window.__pg.phoneId })));
+check('5b: own announcement heard back is ignored', await y.evaluate(() => !window.__pg.S.radioMap['!e3caefdd']) && /own announcement heard back through unit !e3caefdd: ignored/.test(await Y.log()));
+// 5c: unit set as Lead but riding in this truck (1 Nov)
+await y.evaluate(() => { window.__calls.length = 0; });
+await Y.rad('!e3caefdd', 20, -5);
+check('5c: one loud position is not enough', await y.evaluate(() => !window.__pg.S.sameVeh['!e3caefdd'].flag));
+await y.evaluate(() => { window.__pg.S.sameVeh['!e3caefdd'].since = Date.now() - 61000; });
+await Y.rad('!e3caefdd', 30, -4); await y.waitForTimeout(1100);
+check('5c: loud for a minute while moving: flagged, not used for the gap', await y.evaluate(() => window.__pg.S.sameVeh['!e3caefdd'].flag && (!window.__pg.S.rad.lead || window.__pg.S.src.lead === 'mobile')) && /looks like it is in this vehicle/.test(await Y.log()));
+check('5c: banner and spoken warning', /seems to be in this vehicle, but it is set as the Lead pilot/.test(await y.textContent('#banners')) && await y.evaluate(() => window.__calls.some(c => c[0] === 'say' && /looks like it is in this vehicle/.test(c[1]))), await y.textContent('#banners'));
+await y.evaluate(() => { window.__pg.S.lastFix.spd = 0; });
+await Y.rad('!e3caefdd', 15, -4);
+check('5c: stopped in a yard does not clear or set the flag by itself', await y.evaluate(() => window.__pg.S.sameVeh['!e3caefdd'].flag));
+await y.evaluate(() => { window.__pg.S.lastFix.spd = 25; window.__pg.S.sameVeh['!e3caefdd'].last = Date.now() - 61000; });
+await Y.rad('!e3caefdd', 1100, -90);
+check('5c: quiet again for a minute while moving: used again', await y.evaluate(() => !window.__pg.S.sameVeh['!e3caefdd'].flag && !!window.__pg.S.rad.lead));
+// 5d: unit held by another phone
+await y.evaluate(() => window.__pgRadio('state', 'notfound', 'Meshtastic_8cab'));
+await Y.pres('lawrie', 'Lawrie', 'lead', '8cab', 'connected'); await y.waitForTimeout(1100);
+check('5d: says which phone has the unit', /8cab: connected to Lawrie's phone/.test(await y.textContent('#radioState')), await y.textContent('#radioState'));
+await Y.pres('lawrie', 'Lawrie', 'lead', 'efdd', 'connected'); await y.waitForTimeout(1100);
+check('5d: otherwise says it may be connected to another phone', /connected to another phone/.test(await y.textContent('#radioState')), await y.textContent('#radioState'));
+check('1.9.0: Choose radio unit hidden while a phone is in charge', !(await y.isVisible('#radioPick')));
+// hand over
+await y.selectOption('#ctlHandTo', 'lawrie'); await y.click('#ctlHand');
+check('1.9.0: hand over: Lawrie is in charge, this phone keeps its role', await y.evaluate(() => !window.__pg.amMaster() && window.__pg.S.ctl.master === 'lawrie' && window.__pg.S.role === 'truck'));
+// another phone's control: this phone made Rear, with unit aaaa
+await y.evaluate(() => { window.__calls.length = 0; });
+const me = await y.evaluate(() => window.__pg.phoneId);
+await Y.ctl({ v: 1, pid: 'boss', round: Date.now() + 5, master: 'boss', roles: { boss: 'lead', [me]: 'rear' }, units: { aaaa: 'rear' }, names: { boss: 'Boss' }, removed: [], t: Date.now() });
+await y.waitForTimeout(1100);
+check('1.9.0: role given by the phone in charge: now Rear', await y.evaluate(() => window.__pg.S.role === 'rear') && (await y.textContent('#myRole')) === 'Rear pilot' && /now Rear pilot \(set by Boss\)/.test(await Y.log()));
+check('1.9.0: old role cleared from the relay', await y.evaluate(() => window.__calls.some(c => c[0] === 'relayPublish' && c[1].endsWith('/truck') && c[2] === '')));
+check('1.9.0: switched to the radio unit given (app 1.4.0)', await y.evaluate(() => window.__calls.some(c => c[0] === 'radioUse' && c[1] === 'Meshtastic_aaaa')));
+check('1.9.0: spoken: role change', await y.evaluate(() => window.__calls.some(c => c[0] === 'say' && /now rear pilot/.test(c[1]))));
+// an older control message is ignored; a stored one from an old trip too
+await Y.ctl({ v: 1, pid: 'old', round: 5, master: 'old', roles: { [me]: 'lead' }, units: {}, names: {}, removed: [], t: Date.now() });
+await Y.ctl({ v: 1, pid: 'old2', round: Date.now() + 99, master: 'old2', roles: { [me]: 'lead' }, units: {}, names: {}, removed: [], t: Date.now() - 3600000 }, true);
+check('1.9.0: older New trip and stored old-trip control ignored', await y.evaluate(() => window.__pg.S.role === 'rear' && window.__pg.S.ctl.master === 'boss'));
+// not given a role: spectator
+await y.evaluate(() => { window.__calls.length = 0; });
+await Y.ctl({ v: 1, pid: 'boss', round: Date.now() + 10, master: 'boss', roles: { boss: 'lead' }, units: {}, names: { boss: 'Boss' }, removed: [], t: Date.now() });
+await y.waitForTimeout(1100);
+check('1.9.0: not given a role: spectator, no position sent, radio stopped', await y.evaluate(() => window.__pg.S.role === 'spectator') && await y.evaluate(() => { window.__pg.periodic(Date.now() + 20000); return !window.__calls.some(c => c[0] === 'relayPublish' && /\/(lead|truck|truck2|rear)$/.test(c[1]) && c[2]) && window.__calls.some(c => c[0] === 'radioStop'); }));
+check('1.9.0: spectator banner names who is in charge', /Spectator: this phone is not counted in any gap\. Boss is in charge/.test(await y.textContent('#banners')), await y.textContent('#banners'));
+await y.evaluate(() => { window.__calls.length = 0; window.__pg.S.alarmed = {}; });
+await Y.msg('lead', 'boss', 10); await y.waitForTimeout(1100);
+check('1.9.0: a spectator raises no alarms', await y.evaluate(() => !window.__calls.some(c => c[0] === 'say' && /too (close|far)/.test(c[1]))));
+// removed
+await Y.ctl({ v: 1, pid: 'boss', round: Date.now() + 10, master: 'boss', roles: { boss: 'lead', [me]: 'spectator' }, units: {}, names: { boss: 'Boss' }, removed: [me], t: Date.now() + 1000 });
+await y.waitForTimeout(1100);
+check('1.9.0: removed by the phone in charge: told to end the trip', /removed this phone from the trip/.test(await y.textContent('#banners')), await y.textContent('#banners'));
+// automatic restart keeps the last assignment
+await y.evaluate(() => { const c = JSON.parse(localStorage.getItem('pg_ctl')); return !!c; });
+check('1.9.0: assignment kept on the phone for an automatic restart', await y.evaluate(() => { const c = JSON.parse(localStorage.getItem('pg_ctl')); return c && c.ctl.master === 'boss' && c.trip === window.__pg.S.trip; }));
+await y.screenshot({ path: path.join(root, 'tests', 'phone-ctl.png'), fullPage: true });
+await y.click('#stop'); await y.waitForTimeout(300);
+// start as a spectator: no radio
+await y.evaluate(() => { window.__calls.length = 0; localStorage.removeItem('pg_ctl'); });
+await y.click('[data-role=spectator]'); await y.click('#start'); await y.waitForTimeout(500);
+check('1.9.0: starting as Spectator does not start the radio', await y.evaluate(() => window.__pg.S.role === 'spectator' && !window.__calls.some(c => c[0] === 'radioStart')));
+await y.click('#stop');
+await ctxY.close();
+check('no script errors (1.9.0)', errors.filter(e => e.startsWith('ctl:')).length === 0, errors);
 
 await b.close(); srv.close();
 console.log(fails.length ? `\n${fails.length} check(s) failed` : '\nAll checks passed');

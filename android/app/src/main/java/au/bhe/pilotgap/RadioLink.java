@@ -34,6 +34,9 @@ import java.util.UUID;
  * 1.3.2: pair and connect with the device object from a fresh low-energy scan. 1.3.1 paired with an
  * object built from the address alone; Android then offered classic (not low-energy) pairing, showed a
  * PIN box, and failed even with the right PIN (31 Oct 20:28-20:33). Android's failure reason is logged.
+ * 1.4.0 (road test 1 Nov, fix 5a): a connect attempt that has no answer in 30 s is given up and the unit found again
+ * by a fresh scan (16:03-18:04 the link sat on "connecting" for two hours). A unit can also be given by name only
+ * (the phone in charge): the scan matches the name and the address found is kept.
  */
 @SuppressLint("MissingPermission")   // callers check BLUETOOTH_CONNECT first (MainActivity.radioAllowed)
 class RadioLink {
@@ -49,11 +52,15 @@ class RadioLink {
         void myNode(String node);
         void position(String node, String json);
         void text(String node, String json);
+        void found(String address);   // 1.4.0: unit given by name was found at this address
     }
 
     final Context ctx;
     final Listener out;
-    final String address, unit;
+    volatile String address;   // may be empty: then found by name (1.4.0)
+    final String unit;
+    static final int CONNECT_TIMEOUT_MS = 30000;
+    int attempts;
     final HandlerThread thread = new HandlerThread("radio");
     final Handler h;
     final ArrayDeque<byte[]> writes = new ArrayDeque<>();
@@ -80,7 +87,7 @@ class RadioLink {
         bondRx = new BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent i) {
                 BluetoothDevice d = i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                if (d == null || !address.equalsIgnoreCase(d.getAddress())) return;
+                if (d == null || address == null || address.isEmpty() || !address.equalsIgnoreCase(d.getAddress())) return;
                 int st = i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1);
                 int prev = i.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1);
                 if (st == BluetoothDevice.BOND_BONDING) out.state("pairing", unit);
@@ -115,8 +122,8 @@ class RadioLink {
     }
 
     String summary() {
-        return String.format(Locale.US, "radio %s: link %s, connects %d, in %d (pos %d, text %d), out %d",
-            unit, ready ? "up" : "down", connects, rxPackets, rxPositions, rxTexts, txTexts);
+        return String.format(Locale.US, "radio %s: link %s, connects %d, attempts %d, in %d (pos %d, text %d), out %d",
+            unit, ready ? "up" : "down", connects, attempts, rxPackets, rxPositions, rxTexts, txTexts);
     }
 
     // ---- connection (all on the radio thread) ----
@@ -136,9 +143,14 @@ class RadioLink {
                 if (!dev.createBond()) { bonding = false; out.state("pairfailed:Android refused to start pairing", unit); h.postDelayed(() -> { if (want && gatt == null && !bonding) connect(); }, 60000); }
                 return;
             }
+            attempts++;
             out.state("connecting", unit);
-            gatt = dev.connectGatt(ctx, false, cb, BluetoothDevice.TRANSPORT_LE);
-        } catch (Exception e) { close(); later(); }
+            final BluetoothGatt g = dev.connectGatt(ctx, false, cb, BluetoothDevice.TRANSPORT_LE);
+            gatt = g;
+            h.postDelayed(() -> {   // 5a: no answer in 30 s: give up, find the unit again
+                if (want && gatt == g && !ready) { close(); scanned = null; out.state("connecting:no answer in 30 s, trying again", unit); later(); }
+            }, CONNECT_TIMEOUT_MS);
+        } catch (Exception e) { close(); scanned = null; later(); }
     }
 
     /** Find the unit by a short low-energy scan (Meshtastic service), keep its device object, then connect. */
@@ -149,9 +161,17 @@ class RadioLink {
         out.state("searching", unit);
         scanCb = new android.bluetooth.le.ScanCallback() {
             @Override public void onScanResult(int type, android.bluetooth.le.ScanResult r) {
-                if (!address.equalsIgnoreCase(r.getDevice().getAddress())) return;
                 final BluetoothDevice d = r.getDevice();
-                h.post(() -> { if (scanCb == null) return; stopScan(sc); scanned = d; retry = 0; connect(); });
+                String a = address;
+                if (a != null && !a.isEmpty()) { if (!a.equalsIgnoreCase(d.getAddress())) return; }
+                else {   // by name (1.4.0)
+                    String n = r.getScanRecord() != null ? r.getScanRecord().getDeviceName() : null;
+                    if (n == null) n = d.getName();
+                    if (n == null || unit == null || !n.equalsIgnoreCase(unit)) return;
+                }
+                h.post(() -> { if (scanCb == null) return; stopScan(sc); scanned = d;
+                    if (address == null || address.isEmpty()) { address = d.getAddress(); out.found(address); }
+                    retry = 0; connect(); });
             }
             @Override public void onScanFailed(int code) { h.post(() -> { stopScan(sc); out.state("notfound:scan failed " + code, unit); later(); }); }
         };
@@ -193,6 +213,7 @@ class RadioLink {
     void lost(String why) {
         boolean was = ready;
         close();
+        scanned = null;   // 1.4.0: find it again by a fresh scan (a unit taken by another phone then shows as not found)
         if (want) { out.state("connecting", unit); if (was) retry = 0; later(); }
     }
 
