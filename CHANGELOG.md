@@ -2,7 +2,7 @@
 
 The version shows at the bottom of the start screen and in Settings. Newest first.
 
-## 1.9.0 — 2 Nov 2026 (page) and Android app 1.4.0 — NOT RELEASED (built, waiting for Ryan's OK)
+## 1.9.0 — 2 Nov 2026 (page) and Android app 1.4.0 — released 3 Nov 2026 (Ryan, 09:26: "3 release it")
 
 Ryan, 2 Nov: "3g", "yes" to 4 and 5 (19:15). Ryan, 19:17: he said yes without reading the plan, and asked for that to be noted, "that way if there is issues we know why".
 From the road test 1-2 Nov (standard antennas): a phone 213 km away counted as the lead; a unit riding in the truck was set as Lead and gave "Front gap too close, 13 metres"; one phone held a unit another phone was set to use, so that phone searched all trip; a stuck connect never retried.
